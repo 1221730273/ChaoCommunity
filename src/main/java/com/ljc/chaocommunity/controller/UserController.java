@@ -29,4 +29,7 @@ public class UserController {
     public Result<PageResult<PostVO>> getUserPosts(@PathVariable Long userId, PostPageQueryDTO dto) {
         return Result.success(postService.getUserPosts(userId, dto));
     }
+
+
+    //TODO 后续给user数据库表增加是否封禁字段 配合springsecurity 实现用户封禁
 }
