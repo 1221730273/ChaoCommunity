@@ -1,5 +1,7 @@
 package com.ljc.chaocommunity.config;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.data.redis.connection.RedisConnectionFactory;
@@ -16,22 +18,21 @@ public class RedisConfig {
     @Bean
     public RedisTemplate<String, Object> redisTemplate(RedisConnectionFactory factory) {
         RedisTemplate<String, Object> template = new RedisTemplate<>();
-
-        // 连接工厂（负责与Redis建立TCP连接）
         template.setConnectionFactory(factory);
 
-        // key 序列化：全部用 String，REDIS 里存的 key 就是可读的字符串
+        // key 序列化
         StringRedisSerializer stringSerializer = new StringRedisSerializer();
         template.setKeySerializer(stringSerializer);
         template.setHashKeySerializer(stringSerializer);
 
-        // value 序列化：用 Jackson 转成 JSON 字符串，存进去的是什么类，反序列化就能恢复成什么类
-        // GenericJackson2JsonRedisSerializer 会在 JSON 里自动写入 @class 类型信息，反序列化时不需要手动指定 Class
-        GenericJackson2JsonRedisSerializer jsonSerializer = new GenericJackson2JsonRedisSerializer();
+        // value 序列化：自定义 ObjectMapper 注册 JavaTimeModule，解决 LocalDateTime 序列化报错
+        ObjectMapper mapper = new ObjectMapper();
+        mapper.registerModule(new JavaTimeModule());
+        GenericJackson2JsonRedisSerializer jsonSerializer = new GenericJackson2JsonRedisSerializer(mapper);
+
         template.setValueSerializer(jsonSerializer);
         template.setHashValueSerializer(jsonSerializer);
 
-        // 以上配置必须在 setConnectionFactory 之后、afterPropertiesSet 之前
         template.afterPropertiesSet();
         return template;
     }

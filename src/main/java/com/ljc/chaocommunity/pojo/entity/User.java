@@ -39,8 +39,11 @@ public class User {
     /** 被关注数（粉丝数） */
     private Integer followerCount;
 
-    /** 角色 0=普通用户 */
+    /** 角色 0=普通用户 1=管理员 */
     private Integer role;
+
+    /** 用户状态 0=正常 1=禁言 */
+    private Integer status;
 
     @TableField(fill = FieldFill.INSERT)
     private LocalDateTime createTime;

@@ -28,6 +28,6 @@ public class UserDetailsServiceImpl implements UserDetailsService {
         if (Objects.isNull(user)) {
             throw new BusinessException("用户或者密码错误");
         }
-        return new LoginUser(user,user.getRole());
+        return new LoginUser(user);
     }
 }
