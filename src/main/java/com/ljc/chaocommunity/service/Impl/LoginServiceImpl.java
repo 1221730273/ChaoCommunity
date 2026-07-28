@@ -10,6 +10,8 @@ import com.ljc.chaocommunity.pojo.entity.LoginUser;
 import com.ljc.chaocommunity.pojo.entity.User;
 import com.ljc.chaocommunity.pojo.vo.LoginVO;
 import com.ljc.chaocommunity.service.LoginService;
+import com.ljc.chaocommunity.util.SecurityUtils;
+import jakarta.servlet.http.HttpServletRequest;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.security.authentication.AuthenticationManager;
@@ -17,6 +19,7 @@ import org.springframework.security.authentication.UsernamePasswordAuthenticatio
 import org.springframework.security.core.Authentication;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
+import org.springframework.util.StringUtils;
 
 import java.util.Objects;
 import java.util.UUID;
@@ -37,6 +40,9 @@ public class LoginServiceImpl implements LoginService {
     @Autowired
     private PasswordEncoder passwordEncoder;
 
+    @Autowired
+    private HttpServletRequest request;
+
     @Override
     public LoginVO login(LoginDTO dto) {
         //进行认证
@@ -50,11 +56,10 @@ public class LoginServiceImpl implements LoginService {
         LoginUser loginUser = (LoginUser) authenticate.getPrincipal();
         User u = loginUser.getUser();
 
-        //先检查redis中是否已存在该用户 查询id:token
-        String oldToken = (String) redisTemplate.opsForValue().get("user:login:" + u.getId());
-        //如果有把旧的token拿出来 删掉token:info信息
+        //先检查redis中是否已存在该用户 踢掉旧登录
+        String oldToken = (String) redisTemplate.opsForValue().get("auth:user:" + u.getId() + ":token");
         if (oldToken != null){
-            redisTemplate.delete("login:" + oldToken);
+            redisTemplate.delete("auth:token:" + oldToken);
         }
 
         //封装登录信息
@@ -66,14 +71,12 @@ public class LoginServiceImpl implements LoginService {
         loginInfo.setRole(u.getRole());
         loginInfo.setStatus(u.getStatus());
 
-        //生成一个uuid(去掉-)作为新key(token)
+        //生成新token
         String token = UUID.randomUUID().toString().replace("-", "");
-        String key = "login:" + token ;
-
-        //创建token:info
-        redisTemplate.opsForValue().set(key, loginInfo,7, TimeUnit.DAYS);
-        //创建id:token(覆盖掉旧的id:token)
-        redisTemplate.opsForValue().set("user:login:" + u.getId(), token,7, TimeUnit.DAYS);
+        // auth:token:{token} → 存用户信息
+        redisTemplate.opsForValue().set("auth:token:" + token, loginInfo, 7, TimeUnit.DAYS);
+        // auth:user:{userId}:token → 存token（用于踢旧登录）
+        redisTemplate.opsForValue().set("auth:user:" + u.getId() + ":token", token, 7, TimeUnit.DAYS);
 
         //返回给前端
         return new LoginVO(token);
@@ -104,5 +107,29 @@ public class LoginServiceImpl implements LoginService {
                 ? dto.getNickname() : dto.getUsername());
         user.setEmail(dto.getEmail());
         userMapper.insert(user);
+    }
+
+
+    @Override
+    public void logout() {
+        // 获取token
+        String token = request.getHeader("token");
+
+        if (!StringUtils.hasText(token)) {
+            return;
+        }
+
+        // 查询登录信息
+        LoginInfo loginInfo = (LoginInfo) redisTemplate.opsForValue()
+                .get("auth:token:" + token);
+
+        // 删除 auth:user:{userId}:token
+        if (loginInfo != null) {
+            redisTemplate.delete("auth:user:" + loginInfo.getId() + ":token");
+        }
+
+        // 删除 auth:token:{token}
+        redisTemplate.delete("auth:token:" + token);
+
     }
 }

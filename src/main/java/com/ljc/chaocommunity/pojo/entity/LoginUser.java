@@ -4,6 +4,7 @@ import lombok.AllArgsConstructor;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 import org.springframework.security.core.GrantedAuthority;
+import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.core.userdetails.UserDetails;
 
 import java.util.Collection;
@@ -19,7 +20,17 @@ public class LoginUser implements UserDetails {
 
     @Override
     public Collection<? extends GrantedAuthority> getAuthorities() {
-        return List.of();
+
+        //认证(登录)阶段的权限判断
+            if(user.getRole() == 1){
+                return List.of(
+                        new SimpleGrantedAuthority("ROLE_ADMIN")
+                );
+            }else{
+                return List.of(
+                        new SimpleGrantedAuthority("ROLE_USER")
+                );
+            }
     }
 
     @Override

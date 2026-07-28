@@ -1,6 +1,7 @@
 package com.ljc.chaocommunity.config;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.jsontype.impl.LaissezFaireSubTypeValidator;
 import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -25,9 +26,16 @@ public class RedisConfig {
         template.setKeySerializer(stringSerializer);
         template.setHashKeySerializer(stringSerializer);
 
-        // value 序列化：自定义 ObjectMapper 注册 JavaTimeModule，解决 LocalDateTime 序列化报错
+        // value 序列化
         ObjectMapper mapper = new ObjectMapper();
         mapper.registerModule(new JavaTimeModule());
+        // 必须开启 default typing，否则存进 Redis 的 JSON 不带 @class
+        // 反序列化时 Jackson 不知道要还原成什么类，就会变成 LinkedHashMap，强转 ClassCastException
+        // LaissezFaireSubTypeValidator = 信任所有类型，不拦截（数据是我们自己写的，安全）
+        mapper.activateDefaultTyping(
+                LaissezFaireSubTypeValidator.instance,
+                ObjectMapper.DefaultTyping.NON_FINAL
+        );
         GenericJackson2JsonRedisSerializer jsonSerializer = new GenericJackson2JsonRedisSerializer(mapper);
 
         template.setValueSerializer(jsonSerializer);

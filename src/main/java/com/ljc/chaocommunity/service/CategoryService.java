@@ -6,8 +6,13 @@ import java.util.List;
 
 public interface CategoryService {
 
-    /**
-     * 查询所有分类（按 sort 排序）
-     */
     List<Category> listAll();
+
+    Category getById(Long id);
+
+    void create(Category category);
+
+    void update(Category category);
+
+    void delete(Long id);
 }

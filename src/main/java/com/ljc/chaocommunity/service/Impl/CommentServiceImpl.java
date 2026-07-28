@@ -12,6 +12,7 @@ import com.ljc.chaocommunity.pojo.entity.Post;
 import com.ljc.chaocommunity.pojo.result.PageResult;
 import com.ljc.chaocommunity.pojo.vo.CommentVO;
 import com.ljc.chaocommunity.service.CommentService;
+import com.ljc.chaocommunity.util.SecurityUtils;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -54,8 +55,7 @@ public class CommentServiceImpl implements CommentService {
 
         // 3. 保存评论
         Comment comment = new Comment();
-        //TODO 引入springSecurity之后获取当前用户ID
-        comment.setUserId(1L);
+        comment.setUserId(SecurityUtils.getCurrentUserId());
         comment.setPostId(dto.getPostId());
         comment.setContent(dto.getContent());
         comment.setParentId(dto.getParentId() != null ? dto.getParentId() : 0L);
@@ -72,8 +72,7 @@ public class CommentServiceImpl implements CommentService {
 
     @Override
     public PageResult<CommentVO> pageQueryByUserId(CommentPageQueryDTO dto) {
-        //TODO 引入springSecurity之后获取当前用户ID
-        Long currentUserId = 1L;
+        Long currentUserId = SecurityUtils.getCurrentUserId();
         Page<CommentVO> page = new Page<>(dto.getPage(), dto.getSize());
         Page<CommentVO> resultPage = commentMapper.selectPageVoByUserId(page, currentUserId, dto.getSort());
         return new PageResult<>(resultPage.getTotal(), resultPage.getRecords());
@@ -88,8 +87,7 @@ public class CommentServiceImpl implements CommentService {
         }
 
         // 2. 校验是不是自己的评论
-        //TODO 引入springSecurity之后获取当前用户ID
-        Long currentUserId = 1L;
+        Long currentUserId = SecurityUtils.getCurrentUserId();
         if (!comment.getUserId().equals(currentUserId)) {
             throw new BusinessException("只能删除自己的评论");
         }

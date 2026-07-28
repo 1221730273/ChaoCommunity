@@ -34,4 +34,11 @@ public class LoginController {
         loginService.register(dto);
         return Result.success();
     }
+
+    @PostMapping("/logout")
+    @Operation(summary = "用户登出")
+    public Result<Void> logout() {
+        loginService.logout();
+        return Result.success();
+    }
 }

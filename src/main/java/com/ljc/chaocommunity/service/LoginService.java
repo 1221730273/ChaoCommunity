@@ -9,4 +9,6 @@ public interface LoginService {
     LoginVO login(@Valid LoginDTO dto);
 
     void register(@Valid RegisterDTO dto);
+
+    void logout();
 }

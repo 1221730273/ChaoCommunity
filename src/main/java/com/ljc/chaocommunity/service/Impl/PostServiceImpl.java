@@ -17,6 +17,7 @@ import com.ljc.chaocommunity.pojo.result.PageResult;
 import com.ljc.chaocommunity.pojo.vo.PostVO;
 import com.ljc.chaocommunity.pojo.vo.TagVO;
 import com.ljc.chaocommunity.service.PostService;
+import com.ljc.chaocommunity.util.SecurityUtils;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -60,8 +61,7 @@ public class PostServiceImpl implements PostService {
 
         // 3. 保存帖子
         Post post = new Post();
-        //TODO 引入springSecurity之后获取当前用户ID 现在硬编码为1
-        post.setUserId(1L);
+        post.setUserId(SecurityUtils.getCurrentUserId());
         post.setCategoryId(dto.getCategoryId());
         post.setTitle(dto.getTitle());
         post.setContent(dto.getContent());
@@ -167,8 +167,7 @@ public class PostServiceImpl implements PostService {
         Page<PostVO> page = new Page<>(dto.getPage(), dto.getSize());
 
         // 2. follow 模式传 currentUserId，new/hot 模式传 null
-        //TODO 引入springSecurity之后从线程中获取当前用户ID
-        Long currentUserId = "follow".equals(dto.getSort()) ? 1L : null;
+        Long currentUserId = "follow".equals(dto.getSort()) ? SecurityUtils.getCurrentUserId() : null;
 
         Page<PostVO> resultPage = postMapper.selectPageVo(page, dto.getCategoryId(), dto.getSort(), currentUserId);
 
