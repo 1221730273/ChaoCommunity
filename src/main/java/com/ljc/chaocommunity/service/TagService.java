@@ -1,5 +1,6 @@
 package com.ljc.chaocommunity.service;
 
+import com.ljc.chaocommunity.pojo.dto.TagDTO;
 import com.ljc.chaocommunity.pojo.entity.Tag;
 
 import java.util.List;
@@ -10,9 +11,9 @@ public interface TagService {
 
     Tag getById(Long id);
 
-    void create(Tag tag);
+    void create(TagDTO dto);
 
-    void update(Tag tag);
+    void update(TagDTO dto);
 
     void delete(Long id);
 }

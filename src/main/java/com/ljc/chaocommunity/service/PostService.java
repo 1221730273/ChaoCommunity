@@ -1,5 +1,6 @@
 package com.ljc.chaocommunity.service;
 
+import com.ljc.chaocommunity.pojo.dto.CoverUpdateDTO;
 import com.ljc.chaocommunity.pojo.dto.PostDTO;
 import com.ljc.chaocommunity.pojo.dto.PostPageQueryDTO;
 import com.ljc.chaocommunity.pojo.result.PageResult;
@@ -12,6 +13,8 @@ public interface PostService {
     void deletePost(Long postId);
 
     void updatePost(@Valid PostDTO dto);
+
+    void updateCover(Long postId, CoverUpdateDTO dto);
 
     PostVO getPostVOById(Long postId);
 

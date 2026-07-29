@@ -60,6 +60,11 @@ public class Post {
      */
     private Integer commentCount;
 
+    /**
+     * 封面图片URL
+     */
+    private String coverUrl;
+
 
     /**
      * 是否置顶

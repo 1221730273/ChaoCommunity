@@ -18,9 +18,6 @@ public class Category {
     /** 分类名称 */
     private String name;
 
-    /** 分类图标 */
-    private String icon;
-
     /** 分类描述 */
     private String description;
 

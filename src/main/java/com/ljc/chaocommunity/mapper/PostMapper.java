@@ -12,7 +12,7 @@ import org.apache.ibatis.annotations.Select;
 public interface PostMapper extends BaseMapper<Post> {
 
     @Select("SELECT p.id, p.user_id, p.category_id, p.title, p.content, " +
-            "p.view_count, p.like_count, p.comment_count, p.top, p.status, p.is_featured, " +
+            "p.view_count, p.like_count, p.comment_count, p.cover_url, p.top, p.status, p.is_featured, " +
             "p.create_time, p.update_time, " +
             "u.username, u.nickname, u.avatar, " +
             "c.name AS category_name " +

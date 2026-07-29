@@ -6,7 +6,7 @@
     <!-- ===== 首页分页查询：分类 + 排序（new/hot/follow）一个SQL搞定 ===== -->
     <select id="selectPageVo" resultType="com.ljc.chaocommunity.pojo.vo.PostVO">
         SELECT p.id, p.user_id, p.category_id, p.title, p.content,
-               p.view_count, p.like_count, p.comment_count, p.top, p.status, p.is_featured,
+               p.view_count, p.like_count, p.comment_count, p.cover_url, p.top, p.status, p.is_featured,
                p.create_time, p.update_time,
                u.username, u.nickname, u.avatar,
                c.name AS category_name
@@ -37,7 +37,7 @@
     <!-- ===== 用户主页：按用户ID + 排序（new/hot） ===== -->
     <select id="selectPageVoByUserId" resultType="com.ljc.chaocommunity.pojo.vo.PostVO">
         SELECT p.id, p.user_id, p.category_id, p.title, p.content,
-               p.view_count, p.like_count, p.comment_count, p.top, p.status, p.is_featured,
+               p.view_count, p.like_count, p.comment_count, p.cover_url, p.top, p.status, p.is_featured,
                p.create_time, p.update_time,
                u.username, u.nickname, u.avatar,
                c.name AS category_name

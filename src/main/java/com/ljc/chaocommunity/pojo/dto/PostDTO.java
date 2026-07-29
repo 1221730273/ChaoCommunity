@@ -36,4 +36,7 @@ public class PostDTO {
     @Schema(description = "帖子内容")
     private String content;
 
+    @Schema(description = "封面文件ID（创建帖子时使用）")
+    private Long fileId;
+
 }

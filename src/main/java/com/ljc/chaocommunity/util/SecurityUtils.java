@@ -33,4 +33,11 @@ public class SecurityUtils {
     public static String getCurrentUsername() {
         return getLoginUser().getUser().getUsername();
     }
+
+    /**
+     * 当前用户是否为管理员
+     */
+    public static boolean isAdmin() {
+        return getLoginUser().getUser().getRole() == 1;
+    }
 }

@@ -45,6 +45,9 @@ public class PostVO implements Serializable {
     @Schema(description = "评论数")
     private Integer commentCount;
 
+    @Schema(description = "封面图片URL")
+    private String coverUrl;
+
     @Schema(description = "是否置顶 0否 1是")
     private Integer top;
 

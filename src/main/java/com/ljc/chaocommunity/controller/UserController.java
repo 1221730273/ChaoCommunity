@@ -1,17 +1,18 @@
 package com.ljc.chaocommunity.controller;
 
+import com.ljc.chaocommunity.pojo.dto.CoverUpdateDTO;
 import com.ljc.chaocommunity.pojo.dto.PostPageQueryDTO;
+import com.ljc.chaocommunity.pojo.dto.UserProfileDTO;
 import com.ljc.chaocommunity.pojo.result.PageResult;
 import com.ljc.chaocommunity.pojo.result.Result;
 import com.ljc.chaocommunity.pojo.vo.PostVO;
 import com.ljc.chaocommunity.service.PostService;
+import com.ljc.chaocommunity.service.UserService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
+import jakarta.validation.Valid;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.web.bind.annotation.GetMapping;
-import org.springframework.web.bind.annotation.PathVariable;
-import org.springframework.web.bind.annotation.RequestMapping;
-import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.bind.annotation.*;
 
 @RestController
 @RequestMapping("/user")
@@ -23,6 +24,23 @@ public class UserController {
 
     @Autowired
     private PostService postService;
+
+    @Autowired
+    private UserService userService;
+
+    @PutMapping("/profile")
+    @Operation(summary = "修改用户资料")
+    public Result<Void> updateProfile(@Valid @RequestBody UserProfileDTO dto) {
+        userService.updateProfile(dto);
+        return Result.success();
+    }
+
+    @PutMapping("/avatar")
+    @Operation(summary = "修改用户头像")
+    public Result<Void> updateAvatar(@Valid @RequestBody CoverUpdateDTO dto) {
+        userService.updateAvatar(dto);
+        return Result.success();
+    }
 
     @GetMapping("/{userId}/posts")
     @Operation(summary = "获取用户帖子列表")

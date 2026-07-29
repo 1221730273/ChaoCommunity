@@ -1,6 +1,7 @@
 package com.ljc.chaocommunity.controller;
 
 
+import com.ljc.chaocommunity.pojo.dto.CoverUpdateDTO;
 import com.ljc.chaocommunity.pojo.dto.PostDTO;
 import com.ljc.chaocommunity.pojo.dto.PostPageQueryDTO;
 import com.ljc.chaocommunity.pojo.result.PageResult;
@@ -45,15 +46,26 @@ public class PostController {
         return Result.success();
     }
     /**
-     * 修改帖子
+     * 修改帖子内容
      */
     @PutMapping
-    @Operation(summary = "修改帖子")
+    @Operation(summary = "修改帖子内容")
     public Result<Void> updatePost(@Valid @RequestBody PostDTO dto) {
-        if (dto.getId()== null){
+        if (dto.getId() == null) {
             return Result.error("帖子ID不能为空");
         }
         postService.updatePost(dto);
+        return Result.success();
+    }
+
+    /**
+     * 修改帖子封面
+     */
+    @PutMapping("/{postId}/cover")
+    @Operation(summary = "修改帖子封面")
+    public Result<Void> updateCover(@PathVariable Long postId,
+                                    @Valid @RequestBody CoverUpdateDTO dto) {
+        postService.updateCover(postId, dto);
         return Result.success();
     }
     /**
