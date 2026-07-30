@@ -74,6 +74,7 @@ public class PostController {
     @GetMapping("/{postId}")
     @Operation(summary = "查询帖子详情")
     public Result<PostVO> getPost(@PathVariable Long postId) {
+        postService.incrementViewCount(postId);
         PostVO vo = postService.getPostVOById(postId);
         return Result.success(vo);
     }
@@ -92,6 +93,8 @@ public class PostController {
     //TODO 以后可以新增一个功能:用户查询自己的评论 点击对应的评论跳转到对应的帖子然后定位到自己的评论（思路是修改根据id查询详细帖子的接口）
 
     //TODO 以后引入websocket 和 消息队列 新增评论推送 帖子更新推送
+
+    //TODO 以后支持私密帖子 私密帖子只有作者和管理员可见
 
 }
 

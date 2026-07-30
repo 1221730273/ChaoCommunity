@@ -549,4 +549,15 @@ public class PostServiceImpl implements PostService {
             vo.setTags(tagVOList);
         }
     }
+
+    @Override
+    public void incrementViewCount(Long postId) {
+        Post post = postMapper.selectById(postId);
+        if (post != null) {
+            Post updatePost = new Post();
+            updatePost.setId(postId);
+            updatePost.setViewCount(post.getViewCount() + 1);
+            postMapper.updateById(updatePost);
+        }
+    }
 }

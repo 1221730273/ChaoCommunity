@@ -21,4 +21,7 @@ public interface PostService {
     PageResult<PostVO> pageQuery(PostPageQueryDTO dto);
 
     PageResult<PostVO> getUserPosts(Long userId, PostPageQueryDTO dto);
+
+    /** 浏览量+1 */
+    void incrementViewCount(Long postId);
 }
