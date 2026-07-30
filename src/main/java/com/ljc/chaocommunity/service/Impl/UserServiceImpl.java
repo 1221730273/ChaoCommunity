@@ -100,7 +100,6 @@ public class UserServiceImpl implements UserService {
         // 6. 新头像status置1
         newFileRecord.setFilePath(moveResult.objectKey());
         newFileRecord.setUrl(moveResult.url());
-        newFileRecord.setBizType("avatar");
         newFileRecord.setStatus(1);
         fileRecordMapper.updateById(newFileRecord);
 

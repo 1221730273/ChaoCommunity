@@ -140,7 +140,6 @@ public class TagServiceImpl implements TagService {
         // 更新file_record
         fileRecord.setFilePath(moveResult.objectKey());
         fileRecord.setUrl(moveResult.url());
-        fileRecord.setBizType("tag_icon");
         fileRecord.setStatus(1);
         fileRecordMapper.updateById(fileRecord);
 

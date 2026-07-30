@@ -77,4 +77,8 @@ public class PostVO implements Serializable {
     @Schema(description = "帖子标签")
     private List<TagVO> tags;
 
+    // ========== 正文图片 ==========
+    @Schema(description = "正文图片的 file_record ID 列表（用于编辑时回传）")
+    private List<Long> contentFileIds;
+
 }

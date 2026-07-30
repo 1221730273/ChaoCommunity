@@ -5,6 +5,7 @@ import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.ljc.chaocommunity.exception.BusinessException;
 import com.ljc.chaocommunity.mapper.CategoryMapper;
 import com.ljc.chaocommunity.mapper.FileRecordMapper;
+import com.ljc.chaocommunity.mapper.PostFileMapper;
 import com.ljc.chaocommunity.mapper.PostMapper;
 import com.ljc.chaocommunity.mapper.PostTagMapper;
 import com.ljc.chaocommunity.mapper.TagMapper;
@@ -14,6 +15,7 @@ import com.ljc.chaocommunity.pojo.dto.PostPageQueryDTO;
 import com.ljc.chaocommunity.pojo.entity.Category;
 import com.ljc.chaocommunity.pojo.entity.FileRecord;
 import com.ljc.chaocommunity.pojo.entity.Post;
+import com.ljc.chaocommunity.pojo.entity.PostFile;
 import com.ljc.chaocommunity.pojo.entity.PostTag;
 import com.ljc.chaocommunity.pojo.entity.Tag;
 import com.ljc.chaocommunity.pojo.result.PageResult;
@@ -51,6 +53,10 @@ public class PostServiceImpl implements PostService {
     @Autowired
     private FileRecordMapper fileRecordMapper;
 
+    @Autowired
+    private PostFileMapper postFileMapper;
+
+    
     @Override
     @Transactional
     public Long createPost(PostDTO dto) {
@@ -96,7 +102,7 @@ public class PostServiceImpl implements PostService {
         }
 
 
-        // 5. 如果有封面，把临时文件移动到正式目录
+        // 5. 处理封面文件：移动 temp/ → post/cover/
         if (dto.getFileId() != null) {
             FileRecord fileRecord = fileRecordMapper.selectById(dto.getFileId());
             if (fileRecord == null) {
@@ -113,26 +119,68 @@ public class PostServiceImpl implements PostService {
                 throw new BusinessException("非法文件");
             }
 
-            // 直接取 filePath（如 temp/2026-07-29/xxx.jpeg）
             String oldObjectKey = fileRecord.getFilePath();
             String newObjectKey = oldObjectKey.replace("temp/", "post/cover/");
-
             OssUtil.UploadResult moveResult = ossUtil.move(oldObjectKey, newObjectKey);
-            if(moveResult == null){
-                throw new BusinessException("文件处理失败");
-            }
 
-            // 更新file_record
             fileRecord.setFilePath(moveResult.objectKey());
             fileRecord.setUrl(moveResult.url());
-            fileRecord.setBizType("post_cover");
             fileRecord.setStatus(1);
             fileRecordMapper.updateById(fileRecord);
 
-            // 更新帖子的coverUrl为正式URL
+            // 写入帖子-文件关联表
+            PostFile postFile = new PostFile();
+            postFile.setPostId(post.getId());
+            postFile.setFileId(fileRecord.getId());
+            postFile.setType("COVER");
+            postFileMapper.insert(postFile);
+
             post.setCoverUrl(moveResult.url());
-            postMapper.updateById(post);
         }
+
+        // 6. 处理正文图片：移动 temp/ → post/content/，并替换 Markdown 中的临时URL
+        String content = post.getContent();
+        if (dto.getContentFileIds() != null && !dto.getContentFileIds().isEmpty()) {
+            for (Long contentFileId : dto.getContentFileIds()) {
+                FileRecord fileRecord = fileRecordMapper.selectById(contentFileId);
+                if (fileRecord == null) {
+                    throw new BusinessException("正文图片文件不存在，fileId=" + contentFileId);
+                }
+                if (!fileRecord.getUserId().equals(SecurityUtils.getCurrentUserId())) {
+                    throw new BusinessException("无权使用该文件");
+                }
+                if (fileRecord.getStatus() == 1) {
+                    throw new BusinessException("文件已经被使用");
+                }
+                if (!fileRecord.getFilePath().startsWith("temp/")) {
+                    throw new BusinessException("非法文件");
+                }
+
+                String oldUrl = fileRecord.getUrl();
+                String oldObjectKey = fileRecord.getFilePath();
+                String newObjectKey = oldObjectKey.replace("temp/", "post/content/");
+                OssUtil.UploadResult moveResult = ossUtil.move(oldObjectKey, newObjectKey);
+
+                // 替换 content 中的临时URL为正式URL
+                content = content.replace(oldUrl, moveResult.url());
+
+                fileRecord.setFilePath(moveResult.objectKey());
+                fileRecord.setUrl(moveResult.url());
+                fileRecord.setStatus(1);
+                fileRecordMapper.updateById(fileRecord);
+
+                // 写入帖子-文件关联表
+                PostFile postFile = new PostFile();
+                postFile.setPostId(post.getId());
+                postFile.setFileId(fileRecord.getId());
+                postFile.setType("CONTENT");
+                postFileMapper.insert(postFile);
+            }
+            post.setContent(content);
+        }
+
+        // 7. 更新帖子（coverUrl + content）
+        postMapper.updateById(post);
 
         return post.getId();
     }
@@ -150,12 +198,13 @@ public class PostServiceImpl implements PostService {
             throw new BusinessException("无权删除该帖子");
         }
 
-        // 如果有封面，把对应file_record的status置为0
-        if (post.getCoverUrl() != null) {
-            LambdaQueryWrapper<FileRecord> wrapper = new LambdaQueryWrapper<>();
-            wrapper.eq(FileRecord::getUrl, post.getCoverUrl());
-            FileRecord fileRecord = fileRecordMapper.selectOne(wrapper);
-            if (fileRecord != null) {
+        // 通过 post_file 关联表查找帖子关联的所有文件，将 file_record.status 置为 0
+        LambdaQueryWrapper<PostFile> postFileWrapper = new LambdaQueryWrapper<>();
+        postFileWrapper.eq(PostFile::getPostId, postId);
+        List<PostFile> postFiles = postFileMapper.selectList(postFileWrapper);
+        for (PostFile postFile : postFiles) {
+            FileRecord fileRecord = fileRecordMapper.selectById(postFile.getFileId());
+            if (fileRecord != null && fileRecord.getStatus() == 1) {
                 fileRecord.setStatus(0);
                 fileRecordMapper.updateById(fileRecord);
             }
@@ -195,11 +244,9 @@ public class PostServiceImpl implements PostService {
 
         // 4. 更新帖子基本信息
         post.setTitle(dto.getTitle());
-        post.setContent(dto.getContent());
         if (dto.getCategoryId() != null) {
             post.setCategoryId(dto.getCategoryId());
         }
-        postMapper.updateById(post);
 
         // 5. 更新标签关联（先删后插）
         if (dto.getTagIds() != null) {
@@ -219,6 +266,86 @@ public class PostServiceImpl implements PostService {
                 postTagMapper.insertBatch(postTags);
             }
         }
+
+        // 6. 处理正文图片增删
+        String content = dto.getContent();
+
+        // 6a. 查询旧的正文图片
+        LambdaQueryWrapper<PostFile> postFileWrapper = new LambdaQueryWrapper<>();
+        postFileWrapper.eq(PostFile::getPostId, post.getId())
+                .eq(PostFile::getType, "CONTENT");
+        List<PostFile> oldPostFiles = postFileMapper.selectList(postFileWrapper);
+        List<Long> oldFileIds = oldPostFiles.stream()
+                .map(PostFile::getFileId)
+                .collect(Collectors.toList());
+
+        // 6b. 前端传的新集合
+        List<Long> newFileIds = dto.getContentFileIds() != null
+                ? dto.getContentFileIds()
+                : new ArrayList<>();
+
+        // 6c. 被删除的：old - new
+        List<Long> toDelete = oldFileIds.stream()
+                .filter(id -> !newFileIds.contains(id))
+                .collect(Collectors.toList());
+
+        // 6d. 新增的：new - old
+        List<Long> toAdd = newFileIds.stream()
+                .filter(id -> !oldFileIds.contains(id))
+                .collect(Collectors.toList());
+
+        // 6e. 处理删除：file_record.status=0 + 删 post_file 记录
+        for (Long fileId : toDelete) {
+            FileRecord fileRecord = fileRecordMapper.selectById(fileId);
+            if (fileRecord != null && fileRecord.getStatus() == 1) {
+                fileRecord.setStatus(0);
+                fileRecordMapper.updateById(fileRecord);
+            }
+            LambdaQueryWrapper<PostFile> deleteWrapper = new LambdaQueryWrapper<>();
+            deleteWrapper.eq(PostFile::getPostId, post.getId())
+                    .eq(PostFile::getFileId, fileId);
+            postFileMapper.delete(deleteWrapper);
+        }
+
+        // 6f. 处理新增：校验 → move → 更新 file_record → 插 post_file → 替换 URL
+        for (Long fileId : toAdd) {
+            FileRecord fileRecord = fileRecordMapper.selectById(fileId);
+            if (fileRecord == null) {
+                throw new BusinessException("正文图片文件不存在，fileId=" + fileId);
+            }
+            if (!fileRecord.getUserId().equals(currentUserId)) {
+                throw new BusinessException("无权使用该文件");
+            }
+            if (fileRecord.getStatus() == 1) {
+                throw new BusinessException("文件已经被使用");
+            }
+            if (!fileRecord.getFilePath().startsWith("temp/")) {
+                throw new BusinessException("非法文件");
+            }
+
+            String oldUrl = fileRecord.getUrl();
+            String oldObjectKey = fileRecord.getFilePath();
+            String newObjectKey = oldObjectKey.replace("temp/", "post/content/");
+            OssUtil.UploadResult moveResult = ossUtil.move(oldObjectKey, newObjectKey);
+
+            // 替换 content 中的临时URL为正式URL
+            content = content.replace(oldUrl, moveResult.url());
+
+            fileRecord.setFilePath(moveResult.objectKey());
+            fileRecord.setUrl(moveResult.url());
+            fileRecord.setStatus(1);
+            fileRecordMapper.updateById(fileRecord);
+
+            PostFile postFile = new PostFile();
+            postFile.setPostId(post.getId());
+            postFile.setFileId(fileRecord.getId());
+            postFile.setType("CONTENT");
+            postFileMapper.insert(postFile);
+        }
+
+        // 7. 更新帖子内容
+        post.setContent(content);
+        postMapper.updateById(post);
     }
 
     @Override
@@ -250,19 +377,15 @@ public class PostServiceImpl implements PostService {
             throw new BusinessException("非法文件");
         }
 
-        // 3. 查询旧封面fileId
-        Long oldFileId = null;
-        if (post.getCoverUrl() != null) {
-            LambdaQueryWrapper<FileRecord> wrapper = new LambdaQueryWrapper<>();
-            wrapper.eq(FileRecord::getUrl, post.getCoverUrl());
-            FileRecord oldFileRecord = fileRecordMapper.selectOne(wrapper);
-            if (oldFileRecord != null) {
-                oldFileId = oldFileRecord.getId();
-            }
-        }
+        // 3. 通过 post_file 表查询旧封面
+        PostFile oldPostFile = null;
+        LambdaQueryWrapper<PostFile> postFileWrapper = new LambdaQueryWrapper<>();
+        postFileWrapper.eq(PostFile::getPostId, postId)
+                .eq(PostFile::getType, "COVER");
+        oldPostFile = postFileMapper.selectOne(postFileWrapper);
 
-        // 4. 新旧fileId一致则直接返回
-        if (oldFileId != null && oldFileId.equals(dto.getFileId())) {
+        // 4. 新旧 file_record.id 一致则直接返回
+        if (oldPostFile != null && oldPostFile.getFileId().equals(dto.getFileId())) {
             return;
         }
 
@@ -271,21 +394,27 @@ public class PostServiceImpl implements PostService {
         String newObjectKey = oldObjectKey.replace("temp/", "post/cover/");
         OssUtil.UploadResult moveResult = ossUtil.move(oldObjectKey, newObjectKey);
 
-        // 6. 旧封面status置0
-        if (oldFileId != null) {
-            FileRecord oldFileRecord = fileRecordMapper.selectById(oldFileId);
+        // 6. 旧封面：file_record.status 置 0，删除旧的 post_file 记录
+        if (oldPostFile != null) {
+            FileRecord oldFileRecord = fileRecordMapper.selectById(oldPostFile.getFileId());
             if (oldFileRecord != null) {
                 oldFileRecord.setStatus(0);
                 fileRecordMapper.updateById(oldFileRecord);
             }
+            postFileMapper.deleteById(oldPostFile.getId());
         }
 
-        // 7. 新封面status置1
+        // 7. 新封面：file_record.status 置 1，插入新的 post_file 记录
         newFileRecord.setFilePath(moveResult.objectKey());
         newFileRecord.setUrl(moveResult.url());
-        newFileRecord.setBizType("post_cover");
         newFileRecord.setStatus(1);
         fileRecordMapper.updateById(newFileRecord);
+
+        PostFile newPostFile = new PostFile();
+        newPostFile.setPostId(postId);
+        newPostFile.setFileId(newFileRecord.getId());
+        newPostFile.setType("COVER");
+        postFileMapper.insert(newPostFile);
 
         // 8. 更新帖子coverUrl
         post.setCoverUrl(moveResult.url());
@@ -342,6 +471,16 @@ public class PostServiceImpl implements PostService {
 
         // 把标签列表塞进 PostVO
         vo.setTags(tagVOList);
+
+        // 查询正文图片的 fileRecord ID 列表（用于前端编辑时回传）
+        LambdaQueryWrapper<PostFile> postFileWrapper = new LambdaQueryWrapper<>();
+        postFileWrapper.eq(PostFile::getPostId, postId)
+                .eq(PostFile::getType, "CONTENT");
+        List<PostFile> contentFiles = postFileMapper.selectList(postFileWrapper);
+        List<Long> contentFileIds = contentFiles.stream()
+                .map(PostFile::getFileId)
+                .collect(Collectors.toList());
+        vo.setContentFileIds(contentFileIds);
 
         return vo;
     }

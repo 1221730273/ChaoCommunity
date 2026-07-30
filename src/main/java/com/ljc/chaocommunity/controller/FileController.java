@@ -28,7 +28,8 @@ public class FileController {
 
     @PostMapping("/upload")
     @Operation(summary = "上传文件到临时目录")
-    public Result<UploadVO> upload(@RequestParam("file") MultipartFile file) {
+    public Result<UploadVO> upload(@RequestParam("file") MultipartFile file,
+                                   @RequestParam("biz_type") String bizType) {
         OssUtil.UploadResult result = ossUtil.upload(file, "temp");
 
         FileRecord record = new FileRecord();
@@ -36,7 +37,7 @@ public class FileController {
         record.setFileName(file.getOriginalFilename());
         record.setFilePath(result.objectKey());
         record.setUrl(result.url());
-        record.setBizType("temp");
+        record.setBizType(bizType);
         record.setStatus(0);
         fileRecordMapper.insert(record);
 
@@ -47,9 +48,7 @@ public class FileController {
         return Result.success(vo);
     }
 
-    //TODO 修改涉及到图片上传的业务 把tmp目录下的文件移动到指定目录
-    
-    //TODO 定期清理临时目录
+
 
     //TODO 以后读写返回签名链接 
 }
