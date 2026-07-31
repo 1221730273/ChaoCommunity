@@ -3,26 +3,16 @@ package com.ljc.chaocommunity.service.Impl;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.ljc.chaocommunity.exception.BusinessException;
-import com.ljc.chaocommunity.mapper.CategoryMapper;
-import com.ljc.chaocommunity.mapper.FileRecordMapper;
-import com.ljc.chaocommunity.mapper.PostFileMapper;
-import com.ljc.chaocommunity.mapper.PostMapper;
-import com.ljc.chaocommunity.mapper.PostTagMapper;
-import com.ljc.chaocommunity.mapper.TagMapper;
+import com.ljc.chaocommunity.mapper.*;
 import com.ljc.chaocommunity.pojo.dto.CoverUpdateDTO;
 import com.ljc.chaocommunity.pojo.dto.PostDTO;
 import com.ljc.chaocommunity.pojo.dto.PostPageQueryDTO;
-import com.ljc.chaocommunity.pojo.entity.Category;
-import com.ljc.chaocommunity.pojo.entity.FileRecord;
-import com.ljc.chaocommunity.pojo.entity.Post;
-import com.ljc.chaocommunity.pojo.entity.PostFile;
-import com.ljc.chaocommunity.pojo.entity.PostTag;
-import com.ljc.chaocommunity.pojo.entity.Tag;
+import com.ljc.chaocommunity.pojo.entity.*;
 import com.ljc.chaocommunity.pojo.result.PageResult;
+import com.ljc.chaocommunity.pojo.vo.PostAuditVO;
 import com.ljc.chaocommunity.pojo.vo.PostVO;
 import com.ljc.chaocommunity.pojo.vo.TagVO;
 import com.ljc.chaocommunity.service.PostService;
-import com.ljc.chaocommunity.util.OssUtil;
 import com.ljc.chaocommunity.util.SecurityUtils;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
@@ -48,15 +38,25 @@ public class PostServiceImpl implements PostService {
     private PostTagMapper postTagMapper;
 
     @Autowired
-    private OssUtil ossUtil;
-
-    @Autowired
     private FileRecordMapper fileRecordMapper;
 
     @Autowired
     private PostFileMapper postFileMapper;
 
-    
+    @Autowired
+    private PostAuditMapper postAuditMapper;
+
+    @Autowired
+    private PostAuditFileMapper postAuditFileMapper;
+
+    @Autowired
+    private UserMapper userMapper;
+
+
+    /**
+     * 创建帖子 → 提交审核（不直接插入 post 表）
+     * @return 审核记录ID
+     */
     @Override
     @Transactional
     public Long createPost(PostDTO dto) {
@@ -75,115 +75,62 @@ public class PostServiceImpl implements PostService {
             }
         }
 
-        // 3. 创建帖子对象
-        Post post = new Post();
-        post.setUserId(SecurityUtils.getCurrentUserId());
-        post.setCategoryId(dto.getCategoryId());
-        post.setTitle(dto.getTitle());
-        post.setContent(dto.getContent());
+        Long currentUserId = SecurityUtils.getCurrentUserId();
 
-        //TODO 以后发帖子要审核 管理员身份可以审核
-        post.setStatus(0);
-
-        postMapper.insert(post);
-
-
-        // 4. 批量保存帖子-标签关联（一条SQL插入所有关联）
-        if (dto.getTagIds() != null && !dto.getTagIds().isEmpty()) {
-            List<PostTag> postTags = dto.getTagIds().stream()
-                    .map(tagId -> {
-                        PostTag pt = new PostTag();
-                        pt.setPostId(post.getId());
-                        pt.setTagId(tagId);
-                        return pt;
-                    })
-                    .collect(Collectors.toList());
-            postTagMapper.insertBatch(postTags);
-        }
-
-
-        // 5. 处理封面文件：移动 temp/ → post/cover/
+        // 3. 校验封面文件
         if (dto.getFileId() != null) {
-            FileRecord fileRecord = fileRecordMapper.selectById(dto.getFileId());
-            if (fileRecord == null) {
-                throw new BusinessException("文件不存在");
-            }
-            if(!fileRecord.getUserId()
-                    .equals(SecurityUtils.getCurrentUserId())){
-                throw new BusinessException("无权使用该文件");
-            }
-            if(fileRecord.getStatus()==1){
-                throw new BusinessException("文件已经被使用");
-            }
-            if(!fileRecord.getFilePath().startsWith("temp/")){
-                throw new BusinessException("非法文件");
-            }
-
-            String oldObjectKey = fileRecord.getFilePath();
-            String newObjectKey = oldObjectKey.replace("temp/", "post/cover/");
-            OssUtil.UploadResult moveResult = ossUtil.move(oldObjectKey, newObjectKey);
-
-            fileRecord.setFilePath(moveResult.objectKey());
-            fileRecord.setUrl(moveResult.url());
-            fileRecord.setStatus(1);
-            fileRecordMapper.updateById(fileRecord);
-
-            // 写入帖子-文件关联表
-            PostFile postFile = new PostFile();
-            postFile.setPostId(post.getId());
-            postFile.setFileId(fileRecord.getId());
-            postFile.setType("COVER");
-            postFileMapper.insert(postFile);
-
-            post.setCoverUrl(moveResult.url());
+            validateTempFile(dto.getFileId(), currentUserId);
         }
 
-        // 6. 处理正文图片：移动 temp/ → post/content/，并替换 Markdown 中的临时URL
-        String content = post.getContent();
+        // 4. 校验正文图片文件
         if (dto.getContentFileIds() != null && !dto.getContentFileIds().isEmpty()) {
             for (Long contentFileId : dto.getContentFileIds()) {
-                FileRecord fileRecord = fileRecordMapper.selectById(contentFileId);
-                if (fileRecord == null) {
-                    throw new BusinessException("正文图片文件不存在，fileId=" + contentFileId);
-                }
-                if (!fileRecord.getUserId().equals(SecurityUtils.getCurrentUserId())) {
-                    throw new BusinessException("无权使用该文件");
-                }
-                if (fileRecord.getStatus() == 1) {
-                    throw new BusinessException("文件已经被使用");
-                }
-                if (!fileRecord.getFilePath().startsWith("temp/")) {
-                    throw new BusinessException("非法文件");
-                }
-
-                String oldUrl = fileRecord.getUrl();
-                String oldObjectKey = fileRecord.getFilePath();
-                String newObjectKey = oldObjectKey.replace("temp/", "post/content/");
-                OssUtil.UploadResult moveResult = ossUtil.move(oldObjectKey, newObjectKey);
-
-                // 替换 content 中的临时URL为正式URL
-                content = content.replace(oldUrl, moveResult.url());
-
-                fileRecord.setFilePath(moveResult.objectKey());
-                fileRecord.setUrl(moveResult.url());
-                fileRecord.setStatus(1);
-                fileRecordMapper.updateById(fileRecord);
-
-                // 写入帖子-文件关联表
-                PostFile postFile = new PostFile();
-                postFile.setPostId(post.getId());
-                postFile.setFileId(fileRecord.getId());
-                postFile.setType("CONTENT");
-                postFileMapper.insert(postFile);
+                validateTempFile(contentFileId, currentUserId);
             }
-            post.setContent(content);
         }
 
-        // 7. 更新帖子（coverUrl + content）
-        postMapper.updateById(post);
+        // 5. 创建审核记录（新帖，post_id=null）
+        PostAudit audit = new PostAudit();
+        audit.setUserId(currentUserId);
+        audit.setPostId(null);
+        audit.setTitle(dto.getTitle());
+        audit.setContent(dto.getContent());
+        audit.setCategoryId(dto.getCategoryId());
+        audit.setCoverFileId(dto.getFileId());
+        audit.setTagIds(dto.getTagIds() != null && !dto.getTagIds().isEmpty()
+                ? dto.getTagIds().stream().map(String::valueOf).collect(Collectors.joining(","))
+                : null);
+        audit.setStatus(0);
+        postAuditMapper.insert(audit);
 
-        return post.getId();
+        // 6. 创建审核-文件关联记录
+        List<PostAuditFile> auditFiles = new ArrayList<>();
+
+        if (dto.getFileId() != null) {
+            PostAuditFile coverAf = new PostAuditFile();
+            coverAf.setAuditId(audit.getId());
+            coverAf.setFileId(dto.getFileId());
+            coverAf.setType("COVER");
+            auditFiles.add(coverAf);
+        }
+
+        if (dto.getContentFileIds() != null && !dto.getContentFileIds().isEmpty()) {
+            for (Long contentFileId : dto.getContentFileIds()) {
+                PostAuditFile contentAf = new PostAuditFile();
+                contentAf.setAuditId(audit.getId());
+                contentAf.setFileId(contentFileId);
+                contentAf.setType("CONTENT");
+                auditFiles.add(contentAf);
+            }
+        }
+
+        if (!auditFiles.isEmpty()) {
+            postAuditFileMapper.insertBatch(auditFiles);
+        }
+
+        return audit.getId();
     }
+
 
     @Override
     @Transactional
@@ -213,9 +160,14 @@ public class PostServiceImpl implements PostService {
         postMapper.deleteById(postId);
     }
 
+
+    /**
+     * 更新帖子 → 提交审核（不直接修改 post 表）
+     * @return 审核记录ID
+     */
     @Override
     @Transactional
-    public void updatePost(PostDTO dto) {
+    public Long updatePost(PostDTO dto) {
         // 1. 查询原帖子
         Post post = postMapper.selectById(dto.getId());
         if (post == null) {
@@ -242,117 +194,73 @@ public class PostServiceImpl implements PostService {
             }
         }
 
-        // 4. 更新帖子基本信息
-        post.setTitle(dto.getTitle());
-        if (dto.getCategoryId() != null) {
-            post.setCategoryId(dto.getCategoryId());
+        // 4. 校验封面文件（如果传了新的且不同于旧封面）
+        Long oldCoverFileId = getOldCoverFileId(post.getId());
+        if (dto.getFileId() != null && !dto.getFileId().equals(oldCoverFileId)) {
+            validateTempFile(dto.getFileId(), currentUserId);
         }
 
-        // 5. 更新标签关联（先删后插）
-        if (dto.getTagIds() != null) {
-            LambdaQueryWrapper<PostTag> wrapper = new LambdaQueryWrapper<>();
-            wrapper.eq(PostTag::getPostId, post.getId());
-            postTagMapper.delete(wrapper);
-
-            if (!dto.getTagIds().isEmpty()) {
-                List<PostTag> postTags = dto.getTagIds().stream()
-                        .map(tagId -> {
-                            PostTag pt = new PostTag();
-                            pt.setPostId(post.getId());
-                            pt.setTagId(tagId);
-                            return pt;
-                        })
-                        .collect(Collectors.toList());
-                postTagMapper.insertBatch(postTags);
+        // 5. 校验正文图片文件（只校验新增的临时文件）
+        if (dto.getContentFileIds() != null && !dto.getContentFileIds().isEmpty()) {
+            List<Long> oldFileIds = getOldContentFileIds(post.getId());
+            for (Long contentFileId : dto.getContentFileIds()) {
+                // 只校验新增的临时文件（不在旧集合中的）
+                if (!oldFileIds.contains(contentFileId)) {
+                    validateTempFile(contentFileId, currentUserId);
+                }
             }
         }
 
-        // 6. 处理正文图片增删
-        String content = dto.getContent();
+        // 6. 创建审核记录
+        PostAudit audit = new PostAudit();
+        audit.setUserId(currentUserId);
+        audit.setPostId(dto.getId()); // 关联原帖子
+        audit.setTitle(dto.getTitle());
+        audit.setContent(dto.getContent());
+        audit.setCategoryId(dto.getCategoryId());
+        audit.setCoverFileId(dto.getFileId());
+        audit.setTagIds(dto.getTagIds() != null && !dto.getTagIds().isEmpty()
+                ? dto.getTagIds().stream().map(String::valueOf).collect(Collectors.joining(","))
+                : null);
+        audit.setStatus(0);
+        postAuditMapper.insert(audit);
 
-        // 6a. 查询旧的正文图片
-        LambdaQueryWrapper<PostFile> postFileWrapper = new LambdaQueryWrapper<>();
-        postFileWrapper.eq(PostFile::getPostId, post.getId())
-                .eq(PostFile::getType, "CONTENT");
-        List<PostFile> oldPostFiles = postFileMapper.selectList(postFileWrapper);
-        List<Long> oldFileIds = oldPostFiles.stream()
-                .map(PostFile::getFileId)
-                .collect(Collectors.toList());
+        // 7. 创建审核-文件关联记录
+        List<PostAuditFile> auditFiles = new ArrayList<>();
 
-        // 6b. 前端传的新集合
-        List<Long> newFileIds = dto.getContentFileIds() != null
-                ? dto.getContentFileIds()
-                : new ArrayList<>();
-
-        // 6c. 被删除的：old - new
-        List<Long> toDelete = oldFileIds.stream()
-                .filter(id -> !newFileIds.contains(id))
-                .collect(Collectors.toList());
-
-        // 6d. 新增的：new - old
-        List<Long> toAdd = newFileIds.stream()
-                .filter(id -> !oldFileIds.contains(id))
-                .collect(Collectors.toList());
-
-        // 6e. 处理删除：file_record.status=0 + 删 post_file 记录
-        for (Long fileId : toDelete) {
-            FileRecord fileRecord = fileRecordMapper.selectById(fileId);
-            if (fileRecord != null && fileRecord.getStatus() == 1) {
-                fileRecord.setStatus(0);
-                fileRecordMapper.updateById(fileRecord);
-            }
-            LambdaQueryWrapper<PostFile> deleteWrapper = new LambdaQueryWrapper<>();
-            deleteWrapper.eq(PostFile::getPostId, post.getId())
-                    .eq(PostFile::getFileId, fileId);
-            postFileMapper.delete(deleteWrapper);
+        if (dto.getFileId() != null) {
+            PostAuditFile coverAf = new PostAuditFile();
+            coverAf.setAuditId(audit.getId());
+            coverAf.setFileId(dto.getFileId());
+            coverAf.setType("COVER");
+            auditFiles.add(coverAf);
         }
 
-        // 6f. 处理新增：校验 → move → 更新 file_record → 插 post_file → 替换 URL
-        for (Long fileId : toAdd) {
-            FileRecord fileRecord = fileRecordMapper.selectById(fileId);
-            if (fileRecord == null) {
-                throw new BusinessException("正文图片文件不存在，fileId=" + fileId);
+        if (dto.getContentFileIds() != null && !dto.getContentFileIds().isEmpty()) {
+            for (Long contentFileId : dto.getContentFileIds()) {
+                PostAuditFile contentAf = new PostAuditFile();
+                contentAf.setAuditId(audit.getId());
+                contentAf.setFileId(contentFileId);
+                contentAf.setType("CONTENT");
+                auditFiles.add(contentAf);
             }
-            if (!fileRecord.getUserId().equals(currentUserId)) {
-                throw new BusinessException("无权使用该文件");
-            }
-            if (fileRecord.getStatus() == 1) {
-                throw new BusinessException("文件已经被使用");
-            }
-            if (!fileRecord.getFilePath().startsWith("temp/")) {
-                throw new BusinessException("非法文件");
-            }
-
-            String oldUrl = fileRecord.getUrl();
-            String oldObjectKey = fileRecord.getFilePath();
-            String newObjectKey = oldObjectKey.replace("temp/", "post/content/");
-            OssUtil.UploadResult moveResult = ossUtil.move(oldObjectKey, newObjectKey);
-
-            // 替换 content 中的临时URL为正式URL
-            content = content.replace(oldUrl, moveResult.url());
-
-            fileRecord.setFilePath(moveResult.objectKey());
-            fileRecord.setUrl(moveResult.url());
-            fileRecord.setStatus(1);
-            fileRecordMapper.updateById(fileRecord);
-
-            PostFile postFile = new PostFile();
-            postFile.setPostId(post.getId());
-            postFile.setFileId(fileRecord.getId());
-            postFile.setType("CONTENT");
-            postFileMapper.insert(postFile);
         }
 
-        // 7. 更新帖子内容
-        post.setContent(content);
-        postMapper.updateById(post);
+        if (!auditFiles.isEmpty()) {
+            postAuditFileMapper.insertBatch(auditFiles);
+        }
 
-        //TODO 更新完帖子状态置为0 然后管理员审核 用户可以查看自己的帖子无论status的值为什么
+        return audit.getId();
     }
 
+
+    /**
+     * 更新帖子封面 → 提交审核
+     * @return 审核记录ID
+     */
     @Override
     @Transactional
-    public void updateCover(Long postId, CoverUpdateDTO dto) {
+    public Long updateCover(Long postId, CoverUpdateDTO dto) {
         // 1. 查询帖子
         Post post = postMapper.selectById(postId);
         if (post == null) {
@@ -364,74 +272,65 @@ public class PostServiceImpl implements PostService {
             throw new BusinessException("无权修改该帖子");
         }
 
-        // 2. 查询新文件
-        FileRecord newFileRecord = fileRecordMapper.selectById(dto.getFileId());
-        if (newFileRecord == null) {
-            throw new BusinessException("文件不存在");
-        }
-        if (!newFileRecord.getUserId().equals(currentUserId)) {
-            throw new BusinessException("无权使用该文件");
-        }
-        if (newFileRecord.getStatus() == 1) {
-            throw new BusinessException("文件已经被使用");
-        }
-        if (!newFileRecord.getFilePath().startsWith("temp/")) {
-            throw new BusinessException("非法文件");
+        // 2. 查询旧封面 file_id
+        Long oldCoverFileId = getOldCoverFileId(postId);
+
+        // 3. 新旧封面一致则直接返回
+        if (dto.getFileId().equals(oldCoverFileId)) {
+            throw new BusinessException("新封面与当前封面相同");
         }
 
-        // 3. 通过 post_file 表查询旧封面
-        PostFile oldPostFile = null;
-        LambdaQueryWrapper<PostFile> postFileWrapper = new LambdaQueryWrapper<>();
-        postFileWrapper.eq(PostFile::getPostId, postId)
-                .eq(PostFile::getType, "COVER");
-        oldPostFile = postFileMapper.selectOne(postFileWrapper);
+        // 4. 校验新封面文件
+        validateTempFile(dto.getFileId(), currentUserId);
 
-        // 4. 新旧 file_record.id 一致则直接返回
-        if (oldPostFile != null && oldPostFile.getFileId().equals(dto.getFileId())) {
-            return;
+        // 5. 查询旧标签（用于审核记录）
+        LambdaQueryWrapper<PostTag> tagWrapper = new LambdaQueryWrapper<>();
+        tagWrapper.eq(PostTag::getPostId, post.getId());
+        List<PostTag> postTags = postTagMapper.selectList(tagWrapper);
+        String tagIds = postTags.stream()
+                .map(pt -> String.valueOf(pt.getTagId()))
+                .collect(Collectors.joining(","));
+
+        // 6. 创建审核记录
+        PostAudit audit = new PostAudit();
+        audit.setUserId(currentUserId);
+        audit.setPostId(postId);
+        audit.setTitle(post.getTitle());
+        audit.setContent(post.getContent());
+        audit.setCategoryId(post.getCategoryId());
+        audit.setCoverFileId(dto.getFileId()); // 新封面
+        audit.setTagIds(tagIds.isEmpty() ? null : tagIds);
+        audit.setStatus(0);
+        postAuditMapper.insert(audit);
+
+        // 7. 创建审核-文件关联记录（新封面 + 保留旧正文图片）
+        List<PostAuditFile> auditFiles = new ArrayList<>();
+
+        // 新封面
+        PostAuditFile coverAf = new PostAuditFile();
+        coverAf.setAuditId(audit.getId());
+        coverAf.setFileId(dto.getFileId());
+        coverAf.setType("COVER");
+        auditFiles.add(coverAf);
+
+        // 保留旧的正文图片
+        List<Long> oldContentFileIds = getOldContentFileIds(postId);
+        for (Long fileId : oldContentFileIds) {
+            PostAuditFile contentAf = new PostAuditFile();
+            contentAf.setAuditId(audit.getId());
+            contentAf.setFileId(fileId);
+            contentAf.setType("CONTENT");
+            auditFiles.add(contentAf);
         }
 
-        // 5. 移动新文件到正式目录
-        String oldObjectKey = newFileRecord.getFilePath();
-        String newObjectKey = oldObjectKey.replace("temp/", "post/cover/");
-        OssUtil.UploadResult moveResult = ossUtil.move(oldObjectKey, newObjectKey);
+        postAuditFileMapper.insertBatch(auditFiles);
 
-        // 6. 旧封面：file_record.status 置 0，删除旧的 post_file 记录
-        if (oldPostFile != null) {
-            FileRecord oldFileRecord = fileRecordMapper.selectById(oldPostFile.getFileId());
-            if (oldFileRecord != null) {
-                oldFileRecord.setStatus(0);
-                fileRecordMapper.updateById(oldFileRecord);
-            }
-            postFileMapper.deleteById(oldPostFile.getId());
-        }
-
-        // 7. 新封面：file_record.status 置 1，插入新的 post_file 记录
-        newFileRecord.setFilePath(moveResult.objectKey());
-        newFileRecord.setUrl(moveResult.url());
-        newFileRecord.setStatus(1);
-        fileRecordMapper.updateById(newFileRecord);
-
-        PostFile newPostFile = new PostFile();
-        newPostFile.setPostId(postId);
-        newPostFile.setFileId(newFileRecord.getId());
-        newPostFile.setType("COVER");
-        postFileMapper.insert(newPostFile);
-
-        // 8. 更新帖子coverUrl
-        post.setCoverUrl(moveResult.url());
-        postMapper.updateById(post);
-
-
-        //TODO 更新帖子封面也要审核
+        return audit.getId();
     }
 
 
     /**
      * 获取帖子详情
-     *
-     * @param postId 帖子ID
-     * @return 帖子详情
      */
     @Override
     public PostVO getPostVOById(Long postId) {
@@ -441,28 +340,26 @@ public class PostServiceImpl implements PostService {
         if (vo == null) {
             throw new BusinessException("帖子不存在");
         }
-        if (vo.getStatus() == 1) {
-            throw new BusinessException("帖子已经被隐藏");
+
+        // 非公开帖子只有作者和管理员可见
+        if (vo.getStatus() != 0) {
+            Long currentUserId = SecurityUtils.getCurrentUserId();
+            if (!vo.getUserId().equals(currentUserId) && !SecurityUtils.isAdmin()) {
+                throw new BusinessException("帖子不可见");
+            }
         }
 
-        // 根据 postId 查出所有 (post_id, tag_id) 记录
+        // 查询标签
         LambdaQueryWrapper<PostTag> wrapper = new LambdaQueryWrapper<>();
         wrapper.eq(PostTag::getPostId, postId);
         List<PostTag> postTags = postTagMapper.selectList(wrapper);
 
-
-        // ===== 第三步：根据 tagId 列表去 tag 表批量查 =====
         List<TagVO> tagVOList = new ArrayList<>();
         if (!postTags.isEmpty()) {
-            // 3a. 从 postTag 记录中提取出纯 tagId 列表：[3, 7, ...]
             List<Long> tagIds = postTags.stream()
                     .map(PostTag::getTagId)
                     .collect(Collectors.toList());
-
-            // 3b. 批量查询 tag 表，一条 SQL：SELECT * FROM tag WHERE id IN (3, 7, ...)
             List<Tag> tags = tagMapper.selectBatchIds(tagIds);
-
-            // 3c. 将 Tag 实体 → TagVO（只返 id/name/icon，不返时间等敏感字段）
             tagVOList = tags.stream()
                     .map(tag -> TagVO.builder()
                             .id(tag.getId())
@@ -471,15 +368,13 @@ public class PostServiceImpl implements PostService {
                             .build())
                     .collect(Collectors.toList());
         }
-
-        // 把标签列表塞进 PostVO
         vo.setTags(tagVOList);
 
         // 查询正文图片的 fileRecord ID 列表（用于前端编辑时回传）
-        LambdaQueryWrapper<PostFile> postFileWrapper = new LambdaQueryWrapper<>();
-        postFileWrapper.eq(PostFile::getPostId, postId)
+        LambdaQueryWrapper<PostFile> pfWrapper = new LambdaQueryWrapper<>();
+        pfWrapper.eq(PostFile::getPostId, postId)
                 .eq(PostFile::getType, "CONTENT");
-        List<PostFile> contentFiles = postFileMapper.selectList(postFileWrapper);
+        List<PostFile> contentFiles = postFileMapper.selectList(pfWrapper);
         List<Long> contentFileIds = contentFiles.stream()
                 .map(PostFile::getFileId)
                 .collect(Collectors.toList());
@@ -488,46 +383,38 @@ public class PostServiceImpl implements PostService {
         return vo;
     }
 
+
     /**
-     * 首页分页查询：分类 + 排序（new/hot/follow）一条SQL搞定
+     * 首页分页查询：分类 + 排序（new/hot/follow）
      */
     @Override
     public PageResult<PostVO> pageQuery(PostPageQueryDTO dto) {
-
-        // 1. 创建分页对象
         Page<PostVO> page = new Page<>(dto.getPage(), dto.getSize());
-
-        // 2. follow 模式传 currentUserId，new/hot 模式传 null
         Long currentUserId = "follow".equals(dto.getSort()) ? SecurityUtils.getCurrentUserId() : null;
-
         Page<PostVO> resultPage = postMapper.selectPageVo(page, dto.getCategoryId(), dto.getSort(), currentUserId);
-
-        // 3. 给每条帖子填充标签
         fillTags(resultPage.getRecords());
-
         return new PageResult<>(resultPage.getTotal(), resultPage.getRecords());
     }
 
+
     /**
-     * 根据用户ID查询帖子（用户主页用）
+     * 根据用户ID查询帖子（查自己=全部状态，查别人=仅可见）
      */
     @Override
     public PageResult<PostVO> getUserPosts(Long userId, PostPageQueryDTO dto) {
+        Long currentUserId = SecurityUtils.getCurrentUserId();
+        // 查自己时不过滤status，查别人只查可见帖子
+        boolean includeAllStatus = currentUserId.equals(userId);
 
-        // 1. 创建分页对象
         Page<PostVO> page = new Page<>(dto.getPage(), dto.getSize());
-
-        // 2. 分页查询
-        Page<PostVO> resultPage = postMapper.selectPageVoByUserId(page, userId, dto.getSort());
-
-        // 3. 给每条帖子填充标签
+        Page<PostVO> resultPage = postMapper.selectPageVoByUserId(page, userId, dto.getSort(), includeAllStatus);
         fillTags(resultPage.getRecords());
-
         return new PageResult<>(resultPage.getTotal(), resultPage.getRecords());
     }
 
+
     /**
-     * 给帖子列表填充标签（pageQuery 和 getUserPosts 共用）
+     * 给帖子列表填充标签
      */
     private void fillTags(List<PostVO> voList) {
         for (PostVO vo : voList) {
@@ -553,6 +440,7 @@ public class PostServiceImpl implements PostService {
         }
     }
 
+
     @Override
     public void incrementViewCount(Long postId) {
         Post post = postMapper.selectById(postId);
@@ -562,5 +450,177 @@ public class PostServiceImpl implements PostService {
             updatePost.setViewCount(post.getViewCount() + 1);
             postMapper.updateById(updatePost);
         }
+    }
+
+
+    // ==================== 用户自管理方法 ====================
+
+    /**
+     * 切换帖子隐藏状态（0↔1），仅本人
+     */
+    @Override
+    @Transactional
+    public void toggleHidePost(Long postId) {
+        Post post = postMapper.selectById(postId);
+        if (post == null) {
+            throw new BusinessException("帖子不存在");
+        }
+        Long currentUserId = SecurityUtils.getCurrentUserId();
+        if (!post.getUserId().equals(currentUserId)) {
+            throw new BusinessException("无权操作该帖子");
+        }
+        // 切换：0→1 或 1→0
+        post.setStatus(post.getStatus() == 0 ? 1 : 0);
+        postMapper.updateById(post);
+    }
+
+    /**
+     * 查询自己的帖子（包括隐藏的，仅从post表）
+     */
+    @Override
+    public PageResult<PostVO> getMyPosts(PostPageQueryDTO dto) {
+        Long currentUserId = SecurityUtils.getCurrentUserId();
+        Page<PostVO> page = new Page<>(dto.getPage(), dto.getSize());
+        Page<PostVO> resultPage = postMapper.selectPageVoByUserId(page, currentUserId, dto.getSort(), true);
+        fillTags(resultPage.getRecords());
+        return new PageResult<>(resultPage.getTotal(), resultPage.getRecords());
+    }
+
+    /**
+     * 查询自己的审核记录（post_audit中post_id为null的新帖审核）
+     */
+    @Override
+    public List<PostAuditVO> getMyAudits() {
+        Long currentUserId = SecurityUtils.getCurrentUserId();
+
+        LambdaQueryWrapper<PostAudit> wrapper = new LambdaQueryWrapper<>();
+        wrapper.eq(PostAudit::getUserId, currentUserId)
+                .isNull(PostAudit::getPostId)
+                .orderByDesc(PostAudit::getCreateTime);
+        List<PostAudit> audits = postAuditMapper.selectList(wrapper);
+
+        List<PostAuditVO> voList = new ArrayList<>();
+        for (PostAudit audit : audits) {
+            PostAuditVO vo = new PostAuditVO();
+            vo.setId(audit.getId());
+            vo.setUserId(audit.getUserId());
+            vo.setPostId(audit.getPostId());
+            vo.setTitle(audit.getTitle());
+            vo.setContent(audit.getContent());
+            vo.setCategoryId(audit.getCategoryId());
+            vo.setCoverFileId(audit.getCoverFileId());
+            vo.setTagIds(audit.getTagIds());
+            vo.setStatus(audit.getStatus());
+            vo.setRejectReason(audit.getRejectReason());
+            vo.setCreateTime(audit.getCreateTime());
+
+            // 用户信息
+            User user = userMapper.selectById(audit.getUserId());
+            if (user != null) {
+                vo.setUsername(user.getUsername());
+                vo.setNickname(user.getNickname());
+            }
+
+            // 分类名称
+            if (audit.getCategoryId() != null) {
+                Category category = categoryMapper.selectById(audit.getCategoryId());
+                if (category != null) {
+                    vo.setCategoryName(category.getName());
+                }
+            }
+
+            // 封面URL
+            if (audit.getCoverFileId() != null) {
+                FileRecord coverFile = fileRecordMapper.selectById(audit.getCoverFileId());
+                if (coverFile != null) {
+                    vo.setCoverUrl(coverFile.getUrl());
+                }
+            }
+
+            // 正文图片fileId列表
+            LambdaQueryWrapper<PostAuditFile> fileWrapper = new LambdaQueryWrapper<>();
+            fileWrapper.eq(PostAuditFile::getAuditId, audit.getId())
+                    .eq(PostAuditFile::getType, "CONTENT");
+            List<PostAuditFile> auditFiles = postAuditFileMapper.selectList(fileWrapper);
+            List<Long> contentFileIds = auditFiles.stream()
+                    .map(PostAuditFile::getFileId)
+                    .collect(Collectors.toList());
+            vo.setContentFileIds(contentFileIds);
+
+            voList.add(vo);
+        }
+        return voList;
+    }
+
+    /**
+     * 删除自己审核失败的记录（status=2）
+     */
+    @Override
+    @Transactional
+    public void deleteFailedAudit(Long auditId) {
+        Long currentUserId = SecurityUtils.getCurrentUserId();
+
+        PostAudit audit = postAuditMapper.selectById(auditId);
+        if (audit == null) {
+            throw new BusinessException("审核记录不存在");
+        }
+        if (!audit.getUserId().equals(currentUserId)) {
+            throw new BusinessException("无权操作");
+        }
+        if (audit.getStatus() != 2) {
+            throw new BusinessException("只能删除审核失败的记录");
+        }
+
+        // 物理删除审核记录和关联的文件记录
+        LambdaQueryWrapper<PostAuditFile> fileWrapper = new LambdaQueryWrapper<>();
+        fileWrapper.eq(PostAuditFile::getAuditId, auditId);
+        postAuditFileMapper.delete(fileWrapper);
+
+        postAuditMapper.deleteById(auditId);
+    }
+
+
+    // ==================== 私有辅助方法 ====================
+
+    /**
+     * 校验临时文件：存在、属于当前用户、未使用、在 temp/ 目录下
+     */
+    private void validateTempFile(Long fileId, Long userId) {
+        FileRecord fileRecord = fileRecordMapper.selectById(fileId);
+        if (fileRecord == null) {
+            throw new BusinessException("文件不存在");
+        }
+        if (!fileRecord.getUserId().equals(userId)) {
+            throw new BusinessException("无权使用该文件");
+        }
+        if (fileRecord.getStatus() == 1) {
+            throw new BusinessException("文件已经被使用");
+        }
+        if (!fileRecord.getFilePath().startsWith("temp/")) {
+            throw new BusinessException("非法文件");
+        }
+    }
+
+    /**
+     * 查询帖子的旧封面 file_id
+     */
+    private Long getOldCoverFileId(Long postId) {
+        LambdaQueryWrapper<PostFile> wrapper = new LambdaQueryWrapper<>();
+        wrapper.eq(PostFile::getPostId, postId)
+                .eq(PostFile::getType, "COVER");
+        PostFile pf = postFileMapper.selectOne(wrapper);
+        return pf != null ? pf.getFileId() : null;
+    }
+
+    /**
+     * 查询帖子的旧正文图片 file_id 集合
+     */
+    private List<Long> getOldContentFileIds(Long postId) {
+        LambdaQueryWrapper<PostFile> wrapper = new LambdaQueryWrapper<>();
+        wrapper.eq(PostFile::getPostId, postId)
+                .eq(PostFile::getType, "CONTENT");
+        return postFileMapper.selectList(wrapper).stream()
+                .map(PostFile::getFileId)
+                .collect(Collectors.toList());
     }
 }

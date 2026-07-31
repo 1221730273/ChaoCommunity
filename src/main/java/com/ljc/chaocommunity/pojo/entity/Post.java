@@ -76,8 +76,8 @@ public class Post {
 
     /**
      * 帖子状态
-     * 0 正常
-     * 1 封禁
+     * 0 展示
+     * 1 不展示
      */
     private Integer status;
 

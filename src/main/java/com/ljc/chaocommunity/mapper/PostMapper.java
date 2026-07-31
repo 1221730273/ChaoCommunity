@@ -28,9 +28,10 @@ public interface PostMapper extends BaseMapper<Post> {
                               @Param("sort") String sort,
                               @Param("currentUserId") Long currentUserId);
 
-    /** 用户主页：按用户ID + new/hot */
+    /** 用户主页：按用户ID + new/hot，includeAllStatus=true时不过滤status */
     Page<PostVO> selectPageVoByUserId(Page<PostVO> page,
                                       @Param("userId") Long userId,
-                                      @Param("sort") String sort);
+                                      @Param("sort") String sort,
+                                      @Param("includeAllStatus") Boolean includeAllStatus);
 
 }

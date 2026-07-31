@@ -102,9 +102,8 @@ public class LoginServiceImpl implements LoginService {
         User user = new User();
         user.setUsername(dto.getUsername());
         user.setPassword(passwordEncoder.encode(dto.getPassword()));
-        // 昵称不传则默认用用户名
-        user.setNickname(dto.getNickname() != null && !dto.getNickname().isBlank()
-                ? dto.getNickname() : dto.getUsername());
+        // 昵称默认用用户名
+        user.setNickname(dto.getUsername());
         user.setEmail(dto.getEmail());
         userMapper.insert(user);
     }

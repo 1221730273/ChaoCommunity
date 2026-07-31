@@ -27,6 +27,9 @@ public class User {
     /** 头像URL */
     private String avatar;
 
+    /** 头像文件记录ID */
+    private Long avatarFileId;
+
     /** 邮箱 */
     private String email;
 

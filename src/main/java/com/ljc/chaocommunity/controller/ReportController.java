@@ -23,4 +23,6 @@ public class ReportController {
         reportService.submitReport(dto);
         return Result.success();
     }
+
+    //TODO 后续可以把举报功能弄的更正式 比如举报理由 举报的图片
 }

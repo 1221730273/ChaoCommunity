@@ -50,7 +50,12 @@ public class MyMetaObjectHandler implements MetaObjectHandler {
 }
 
 
-//TODO 轮播图 ,举报,拦截接口,权限控制,前后端联调 让用户账户封禁 或者 限制发言
+//TODO 关注接口 拦截接口,权限控制,前后端联调 让用户账户封禁 或者 限制发言
 
 
 //TODO 以后可以创建专栏相关实体接口 帖子可以放在专栏下
+
+//TODO 以后可以查看关注的人的动态
+
+
+

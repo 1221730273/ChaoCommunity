@@ -6,6 +6,7 @@ import com.ljc.chaocommunity.pojo.dto.PostDTO;
 import com.ljc.chaocommunity.pojo.dto.PostPageQueryDTO;
 import com.ljc.chaocommunity.pojo.result.PageResult;
 import com.ljc.chaocommunity.pojo.result.Result;
+import com.ljc.chaocommunity.pojo.vo.PostAuditVO;
 import com.ljc.chaocommunity.pojo.vo.PostVO;
 import com.ljc.chaocommunity.service.PostService;
 import io.swagger.v3.oas.annotations.Operation;
@@ -13,6 +14,8 @@ import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.web.bind.annotation.*;
+
+import java.util.List;
 
 @RestController
 @RequestMapping("/post")
@@ -26,15 +29,15 @@ public class PostController {
 
 
     /**
-     * 创建帖子
+     * 创建帖子（提交审核）
      */
     @PostMapping
-    @Operation(summary = "创建帖子")
+    @Operation(summary = "创建帖子（提交审核）")
     public Result<Long> createPost(@Valid @RequestBody PostDTO dto) {
 
-        Long postId = postService.createPost(dto);
+        Long auditId = postService.createPost(dto);
 
-        return Result.success(postId);
+        return Result.success(auditId);
     }
     /**
      * 删除帖子
@@ -46,27 +49,27 @@ public class PostController {
         return Result.success();
     }
     /**
-     * 修改帖子内容
+     * 修改帖子内容（提交审核）
      */
     @PutMapping
-    @Operation(summary = "修改帖子内容")
-    public Result<Void> updatePost(@Valid @RequestBody PostDTO dto) {
+    @Operation(summary = "修改帖子内容（提交审核）")
+    public Result<Long> updatePost(@Valid @RequestBody PostDTO dto) {
         if (dto.getId() == null) {
             return Result.error("帖子ID不能为空");
         }
-        postService.updatePost(dto);
-        return Result.success();
+        Long auditId = postService.updatePost(dto);
+        return Result.success(auditId);
     }
 
     /**
-     * 修改帖子封面
+     * 修改帖子封面（提交审核）
      */
     @PutMapping("/{postId}/cover")
-    @Operation(summary = "修改帖子封面")
-    public Result<Void> updateCover(@PathVariable Long postId,
+    @Operation(summary = "修改帖子封面（提交审核）")
+    public Result<Long> updateCover(@PathVariable Long postId,
                                     @Valid @RequestBody CoverUpdateDTO dto) {
-        postService.updateCover(postId, dto);
-        return Result.success();
+        Long auditId = postService.updateCover(postId, dto);
+        return Result.success(auditId);
     }
     /**
      * 查询帖子详情
@@ -88,13 +91,58 @@ public class PostController {
         return Result.success(result);
     }
 
+    /**
+     * 根据用户ID查询帖子列表（查别人只查可见帖子，查自己包括隐藏帖子）
+     */
+    @GetMapping("/user/{userId}")
+    @Operation(summary = "根据用户ID查询帖子列表")
+    public Result<PageResult<PostVO>> getUserPosts(@PathVariable Long userId,
+                                                    @Valid PostPageQueryDTO dto) {
+        return Result.success(postService.getUserPosts(userId, dto));
+    }
+
+    /**
+     * 切换帖子隐藏状态（0↔1），仅本人
+     */
+    @PutMapping("/{postId}/hide")
+    @Operation(summary = "切换帖子隐藏状态")
+    public Result<Void> toggleHidePost(@PathVariable Long postId) {
+        postService.toggleHidePost(postId);
+        return Result.success();
+    }
+
+    /**
+     * 查询自己的帖子（包括隐藏的，仅从post表）
+     */
+    @GetMapping("/my")
+    @Operation(summary = "查询自己的帖子（含隐藏）")
+    public Result<PageResult<PostVO>> getMyPosts(@Valid PostPageQueryDTO dto) {
+        return Result.success(postService.getMyPosts(dto));
+    }
+
+    /**
+     * 查询自己的审核记录（新帖审核）
+     */
+    @GetMapping("/my/audits")
+    @Operation(summary = "查询自己的审核记录")
+    public Result<List<PostAuditVO>> getMyAudits() {
+        return Result.success(postService.getMyAudits());
+    }
+
+    /**
+     * 删除自己审核失败的记录
+     */
+    @DeleteMapping("/audit/{auditId}")
+    @Operation(summary = "删除审核失败记录")
+    public Result<Void> deleteFailedAudit(@PathVariable Long auditId) {
+        postService.deleteFailedAudit(auditId);
+        return Result.success();
+    }
 
 
     //TODO 以后可以新增一个功能:用户查询自己的评论 点击对应的评论跳转到对应的帖子然后定位到自己的评论（思路是修改根据id查询详细帖子的接口）
 
     //TODO 以后引入websocket 和 消息队列 新增评论推送 帖子更新推送
 
-    //TODO 以后支持私密帖子 私密帖子只有作者和管理员可见
 
 }
-

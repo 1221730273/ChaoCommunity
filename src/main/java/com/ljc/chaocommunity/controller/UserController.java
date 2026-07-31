@@ -29,14 +29,14 @@ public class UserController {
     private UserService userService;
 
     @PutMapping("/profile")
-    @Operation(summary = "修改用户资料")
+    @Operation(summary = "修改用户资料（需审核）")
     public Result<Void> updateProfile(@Valid @RequestBody UserProfileDTO dto) {
         userService.updateProfile(dto);
         return Result.success();
     }
 
     @PutMapping("/avatar")
-    @Operation(summary = "修改用户头像")
+    @Operation(summary = "修改用户头像（需审核）")
     public Result<Void> updateAvatar(@Valid @RequestBody CoverUpdateDTO dto) {
         userService.updateAvatar(dto);
         return Result.success();
@@ -50,4 +50,7 @@ public class UserController {
 
 
     //TODO 后续给user数据库表增加是否封禁字段 配合springsecurity 实现用户封禁
+
+
+    //TODO 以后支持邮箱修改绑定现在不支持 以后支持接入qq登录
 }

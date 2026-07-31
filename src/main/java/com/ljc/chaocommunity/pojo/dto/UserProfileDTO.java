@@ -12,10 +12,6 @@ public class UserProfileDTO {
     @Schema(description = "昵称")
     private String nickname;
 
-    @Size(max = 64, message = "邮箱最多64个字符")
-    @Schema(description = "邮箱")
-    private String email;
-
     @Size(max = 256, message = "个性签名最多256个字")
     @Schema(description = "个性签名")
     private String signature;
