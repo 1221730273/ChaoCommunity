@@ -431,8 +431,6 @@ public class PostServiceImpl implements PostService {
     @Override
     public PostVO getPostVOById(Long postId) {
 
-        //TODO 标签是要带图标的 以后给标签表增加一个图片路径
-
         PostVO vo = postMapper.getPostVOById(postId);
 
         if (vo == null) {

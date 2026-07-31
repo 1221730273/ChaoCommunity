@@ -48,3 +48,6 @@ public class MyMetaObjectHandler implements MetaObjectHandler {
 
     }
 }
+
+
+//TODO 轮播图 ,举报,拦截接口,权限控制,前后端联调
