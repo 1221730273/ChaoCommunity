@@ -44,6 +44,9 @@ public class UserServiceImpl implements UserService {
         }
 
         userMapper.updateById(user);
+
+        //todo 以后新增用户资料审核
+
     }
 
     @Override
@@ -106,5 +109,7 @@ public class UserServiceImpl implements UserService {
         // 7. 更新用户头像
         user.setAvatar(moveResult.url());
         userMapper.updateById(user);
+
+        //todo 以后新增用户头像审核
     }
 }

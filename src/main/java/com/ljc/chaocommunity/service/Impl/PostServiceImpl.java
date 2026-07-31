@@ -346,6 +346,8 @@ public class PostServiceImpl implements PostService {
         // 7. 更新帖子内容
         post.setContent(content);
         postMapper.updateById(post);
+
+        //TODO 更新完帖子状态置为0 然后管理员审核 用户可以查看自己的帖子无论status的值为什么
     }
 
     @Override
@@ -419,6 +421,9 @@ public class PostServiceImpl implements PostService {
         // 8. 更新帖子coverUrl
         post.setCoverUrl(moveResult.url());
         postMapper.updateById(post);
+
+
+        //TODO 更新帖子封面也要审核
     }
 
 
