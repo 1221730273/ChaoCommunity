@@ -50,7 +50,7 @@ public class MyMetaObjectHandler implements MetaObjectHandler {
 }
 
 
-//TODO 关注接口 拦截接口,权限控制,前后端联调 让用户账户封禁 或者 限制发言
+//TODO  前后端联调 让用户账户封禁 或者 限制发言 qq邮箱给管理员推送审核邮件
 
 
 //TODO 以后可以创建专栏相关实体接口 帖子可以放在专栏下

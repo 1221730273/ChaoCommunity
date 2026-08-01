@@ -1,4 +1,4 @@
-package com.ljc.chaocommunity.controller;
+package com.ljc.chaocommunity.controller.user;
 
 
 import com.ljc.chaocommunity.pojo.dto.CoverUpdateDTO;
@@ -89,6 +89,16 @@ public class PostController {
     public Result<PageResult<PostVO>> listPosts(@Valid PostPageQueryDTO dto) {
         PageResult<PostVO> result = postService.pageQuery(dto);
         return Result.success(result);
+    }
+
+    /**
+     * 分页查询精选帖子
+     */
+    @GetMapping("/featured")
+    @Operation(summary = "查询精选帖子")
+    public Result<PageResult<PostVO>> getFeaturedPosts(@RequestParam(defaultValue = "1") int page,
+                                                        @RequestParam(defaultValue = "10") int size) {
+        return Result.success(postService.pageQueryFeatured(page, size));
     }
 
     /**

@@ -89,10 +89,11 @@ public class PostServiceImpl implements PostService {
             }
         }
 
-        // 5. 创建审核记录（新帖，post_id=null）
+        // 5. 创建审核记录（新帖，post_id=null, type=CREATE）
         PostAudit audit = new PostAudit();
         audit.setUserId(currentUserId);
         audit.setPostId(null);
+        audit.setType("CREATE");
         audit.setTitle(dto.getTitle());
         audit.setContent(dto.getContent());
         audit.setCategoryId(dto.getCategoryId());
@@ -194,27 +195,30 @@ public class PostServiceImpl implements PostService {
             }
         }
 
-        // 4. 校验封面文件（如果传了新的且不同于旧封面）
+        // 4. 检查是否有同帖子的待审核记录
+        checkDuplicateAudit(post.getId());
+
+        // 5. 校验封面文件（如果传了新的且不同于旧封面）
         Long oldCoverFileId = getOldCoverFileId(post.getId());
         if (dto.getFileId() != null && !dto.getFileId().equals(oldCoverFileId)) {
             validateTempFile(dto.getFileId(), currentUserId);
         }
 
-        // 5. 校验正文图片文件（只校验新增的临时文件）
+        // 6. 校验正文图片文件（只校验新增的临时文件）
         if (dto.getContentFileIds() != null && !dto.getContentFileIds().isEmpty()) {
             List<Long> oldFileIds = getOldContentFileIds(post.getId());
             for (Long contentFileId : dto.getContentFileIds()) {
-                // 只校验新增的临时文件（不在旧集合中的）
                 if (!oldFileIds.contains(contentFileId)) {
                     validateTempFile(contentFileId, currentUserId);
                 }
             }
         }
 
-        // 6. 创建审核记录
+        // 7. 创建审核记录（type=UPDATE）
         PostAudit audit = new PostAudit();
         audit.setUserId(currentUserId);
-        audit.setPostId(dto.getId()); // 关联原帖子
+        audit.setPostId(dto.getId());
+        audit.setType("UPDATE");
         audit.setTitle(dto.getTitle());
         audit.setContent(dto.getContent());
         audit.setCategoryId(dto.getCategoryId());
@@ -255,7 +259,7 @@ public class PostServiceImpl implements PostService {
 
 
     /**
-     * 更新帖子封面 → 提交审核
+     * 更新帖子封面 → 提交审核（只存封面数据，不存内容）
      * @return 审核记录ID
      */
     @Override
@@ -272,58 +276,36 @@ public class PostServiceImpl implements PostService {
             throw new BusinessException("无权修改该帖子");
         }
 
-        // 2. 查询旧封面 file_id
+        // 2. 检查是否有同帖子的待审核记录
+        checkDuplicateAudit(postId);
+
+        // 3. 查询旧封面 file_id
         Long oldCoverFileId = getOldCoverFileId(postId);
 
-        // 3. 新旧封面一致则直接返回
+        // 4. 新旧封面一致则直接返回
         if (dto.getFileId().equals(oldCoverFileId)) {
             throw new BusinessException("新封面与当前封面相同");
         }
 
-        // 4. 校验新封面文件
+        // 5. 校验新封面文件
         validateTempFile(dto.getFileId(), currentUserId);
 
-        // 5. 查询旧标签（用于审核记录）
-        LambdaQueryWrapper<PostTag> tagWrapper = new LambdaQueryWrapper<>();
-        tagWrapper.eq(PostTag::getPostId, post.getId());
-        List<PostTag> postTags = postTagMapper.selectList(tagWrapper);
-        String tagIds = postTags.stream()
-                .map(pt -> String.valueOf(pt.getTagId()))
-                .collect(Collectors.joining(","));
-
-        // 6. 创建审核记录
+        // 6. 创建审核记录（type=COVER，只存封面，不存内容）
         PostAudit audit = new PostAudit();
         audit.setUserId(currentUserId);
         audit.setPostId(postId);
-        audit.setTitle(post.getTitle());
-        audit.setContent(post.getContent());
-        audit.setCategoryId(post.getCategoryId());
-        audit.setCoverFileId(dto.getFileId()); // 新封面
-        audit.setTagIds(tagIds.isEmpty() ? null : tagIds);
+        audit.setType("COVER");
+        audit.setCoverFileId(dto.getFileId());
+        audit.setTitle(post.getTitle());  // 仅用于管理端展示
         audit.setStatus(0);
         postAuditMapper.insert(audit);
 
-        // 7. 创建审核-文件关联记录（新封面 + 保留旧正文图片）
-        List<PostAuditFile> auditFiles = new ArrayList<>();
-
-        // 新封面
+        // 7. 创建审核-文件关联（仅封面）
         PostAuditFile coverAf = new PostAuditFile();
         coverAf.setAuditId(audit.getId());
         coverAf.setFileId(dto.getFileId());
         coverAf.setType("COVER");
-        auditFiles.add(coverAf);
-
-        // 保留旧的正文图片
-        List<Long> oldContentFileIds = getOldContentFileIds(postId);
-        for (Long fileId : oldContentFileIds) {
-            PostAuditFile contentAf = new PostAuditFile();
-            contentAf.setAuditId(audit.getId());
-            contentAf.setFileId(fileId);
-            contentAf.setType("CONTENT");
-            auditFiles.add(contentAf);
-        }
-
-        postAuditFileMapper.insertBatch(auditFiles);
+        postAuditFileMapper.insert(coverAf);
 
         return audit.getId();
     }
@@ -442,6 +424,25 @@ public class PostServiceImpl implements PostService {
 
 
     @Override
+    @Transactional
+    public void toggleFeatured(Long postId) {
+        Post post = postMapper.selectById(postId);
+        if (post == null) {
+            throw new BusinessException("帖子不存在");
+        }
+        post.setIsFeatured(post.getIsFeatured() == 1 ? 0 : 1);
+        postMapper.updateById(post);
+    }
+
+    @Override
+    public PageResult<PostVO> pageQueryFeatured(int page, int size) {
+        Page<PostVO> p = new Page<>(page, size);
+        Page<PostVO> resultPage = postMapper.selectPageVoFeatured(p);
+        fillTags(resultPage.getRecords());
+        return new PageResult<>(resultPage.getTotal(), resultPage.getRecords());
+    }
+
+    @Override
     public void incrementViewCount(Long postId) {
         Post post = postMapper.selectById(postId);
         if (post != null) {
@@ -487,7 +488,7 @@ public class PostServiceImpl implements PostService {
     }
 
     /**
-     * 查询自己的审核记录（post_audit中post_id为null的新帖审核）
+     * 查询自己的审核记录（包括新帖审核和更新审核，只返回审核中和审核失败）
      */
     @Override
     public List<PostAuditVO> getMyAudits() {
@@ -495,7 +496,7 @@ public class PostServiceImpl implements PostService {
 
         LambdaQueryWrapper<PostAudit> wrapper = new LambdaQueryWrapper<>();
         wrapper.eq(PostAudit::getUserId, currentUserId)
-                .isNull(PostAudit::getPostId)
+                .in(PostAudit::getStatus, 0, 2)  // 0=审核中 2=审核失败，排除已通过
                 .orderByDesc(PostAudit::getCreateTime);
         List<PostAudit> audits = postAuditMapper.selectList(wrapper);
 
@@ -553,6 +554,42 @@ public class PostServiceImpl implements PostService {
     }
 
     /**
+     * 分页查询所有帖子（管理端，包含隐藏）
+     */
+    @Override
+    public PageResult<PostVO> pageQueryAll(PostPageQueryDTO dto) {
+        Page<PostVO> page = new Page<>(dto.getPage(), dto.getSize());
+        Page<PostVO> resultPage = postMapper.selectPageVoAll(page, dto.getCategoryId(), dto.getSort());
+        fillTags(resultPage.getRecords());
+        return new PageResult<>(resultPage.getTotal(), resultPage.getRecords());
+    }
+
+    /**
+     * 删除帖子（管理端，不限本人）
+     */
+    @Override
+    @Transactional
+    public void adminDeletePost(Long postId) {
+        Post post = postMapper.selectById(postId);
+        if (post == null) {
+            throw new BusinessException("帖子不存在");
+        }
+
+        LambdaQueryWrapper<PostFile> postFileWrapper = new LambdaQueryWrapper<>();
+        postFileWrapper.eq(PostFile::getPostId, postId);
+        List<PostFile> postFiles = postFileMapper.selectList(postFileWrapper);
+        for (PostFile pf : postFiles) {
+            FileRecord fr = fileRecordMapper.selectById(pf.getFileId());
+            if (fr != null && fr.getStatus() == 1) {
+                fr.setStatus(0);
+                fileRecordMapper.updateById(fr);
+            }
+        }
+
+        postMapper.deleteById(postId);
+    }
+
+    /**
      * 删除自己审核失败的记录（status=2）
      */
     @Override
@@ -581,6 +618,18 @@ public class PostServiceImpl implements PostService {
 
 
     // ==================== 私有辅助方法 ====================
+
+    /**
+     * 检查同帖子是否已有待审核记录
+     */
+    private void checkDuplicateAudit(Long postId) {
+        LambdaQueryWrapper<PostAudit> wrapper = new LambdaQueryWrapper<>();
+        wrapper.eq(PostAudit::getPostId, postId)
+                .eq(PostAudit::getStatus, 0);
+        if (postAuditMapper.selectCount(wrapper) > 0) {
+            throw new BusinessException("该帖子已有修改在审核中，请等待审核完成");
+        }
+    }
 
     /**
      * 校验临时文件：存在、属于当前用户、未使用、在 temp/ 目录下

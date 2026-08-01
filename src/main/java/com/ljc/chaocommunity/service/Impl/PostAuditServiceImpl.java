@@ -122,12 +122,18 @@ public class PostAuditServiceImpl implements PostAuditService {
             throw new BusinessException("该审核已处理过");
         }
 
-        if (audit.getPostId() == null) {
-            // 新帖 → 创建帖子
-            createPostFromAudit(audit);
-        } else {
-            // 更新 → 更新已有帖子
-            updatePostFromAudit(audit);
+        switch (audit.getType()) {
+            case "CREATE":
+                createPostFromAudit(audit);
+                break;
+            case "UPDATE":
+                updatePostFromAudit(audit);
+                break;
+            case "COVER":
+                updateCoverFromAudit(audit);
+                break;
+            default:
+                throw new BusinessException("不支持的审核类型");
         }
 
         // 更新审核状态
@@ -155,6 +161,120 @@ public class PostAuditServiceImpl implements PostAuditService {
         audit.setRejectReason(reason);
         audit.setHandlerId(handlerId);
         postAuditMapper.updateById(audit);
+    }
+
+    /**
+     * 审核通过 — 仅更新封面
+     */
+    private void updateCoverFromAudit(PostAudit audit) {
+        Post post = postMapper.selectById(audit.getPostId());
+        if (post == null) {
+            throw new BusinessException("原帖子不存在");
+        }
+
+        // 1. 查询旧封面
+        LambdaQueryWrapper<PostFile> pfWrapper = new LambdaQueryWrapper<>();
+        pfWrapper.eq(PostFile::getPostId, post.getId())
+                .eq(PostFile::getType, "COVER");
+        PostFile oldCover = postFileMapper.selectOne(pfWrapper);
+
+        Long newCoverFileId = audit.getCoverFileId();
+        if (newCoverFileId == null) {
+            return; // 没有新封面，不处理
+        }
+
+        // 2. 移动新封面文件
+        FileRecord newFr = fileRecordMapper.selectById(newCoverFileId);
+        if (newFr == null) throw new BusinessException("封面文件不存在");
+
+        String oldKey = newFr.getFilePath();
+        String newKey = oldKey.replace("temp/", "post/cover/");
+        OssUtil.UploadResult moveResult = ossUtil.move(oldKey, newKey);
+
+        newFr.setFilePath(moveResult.objectKey());
+        newFr.setUrl(moveResult.url());
+        newFr.setStatus(1);
+        fileRecordMapper.updateById(newFr);
+
+        // 3. 释放旧封面
+        if (oldCover != null) {
+            FileRecord oldFr = fileRecordMapper.selectById(oldCover.getFileId());
+            if (oldFr != null && oldFr.getStatus() == 1) {
+                oldFr.setStatus(0);
+                fileRecordMapper.updateById(oldFr);
+            }
+            postFileMapper.deleteById(oldCover.getId());
+        }
+
+        // 4. 插入新封面 post_file
+        PostFile newPf = new PostFile();
+        newPf.setPostId(post.getId());
+        newPf.setFileId(newFr.getId());
+        newPf.setType("COVER");
+        postFileMapper.insert(newPf);
+
+        // 5. 更新帖子 coverUrl（不动内容）
+        post.setCoverUrl(moveResult.url());
+        postMapper.updateById(post);
+    }
+
+    // ==================== 根据用户ID查询审核 ====================
+
+    @Override
+    public List<PostAuditVO> getAuditListByUserId(Long userId) {
+        LambdaQueryWrapper<PostAudit> wrapper = new LambdaQueryWrapper<>();
+        wrapper.eq(PostAudit::getUserId, userId)
+                .orderByDesc(PostAudit::getCreateTime);
+        List<PostAudit> audits = postAuditMapper.selectList(wrapper);
+
+        List<PostAuditVO> voList = new ArrayList<>();
+        for (PostAudit audit : audits) {
+            PostAuditVO vo = new PostAuditVO();
+            vo.setId(audit.getId());
+            vo.setUserId(audit.getUserId());
+            vo.setPostId(audit.getPostId());
+            vo.setTitle(audit.getTitle());
+            vo.setContent(audit.getContent());
+            vo.setCategoryId(audit.getCategoryId());
+            vo.setCoverFileId(audit.getCoverFileId());
+            vo.setTagIds(audit.getTagIds());
+            vo.setStatus(audit.getStatus());
+            vo.setRejectReason(audit.getRejectReason());
+            vo.setHandlerId(audit.getHandlerId());
+            vo.setCreateTime(audit.getCreateTime());
+
+            User user = userMapper.selectById(audit.getUserId());
+            if (user != null) {
+                vo.setUsername(user.getUsername());
+                vo.setNickname(user.getNickname());
+            }
+
+            if (audit.getCategoryId() != null) {
+                Category category = categoryMapper.selectById(audit.getCategoryId());
+                if (category != null) {
+                    vo.setCategoryName(category.getName());
+                }
+            }
+
+            if (audit.getCoverFileId() != null) {
+                FileRecord coverFile = fileRecordMapper.selectById(audit.getCoverFileId());
+                if (coverFile != null) {
+                    vo.setCoverUrl(coverFile.getUrl());
+                }
+            }
+
+            LambdaQueryWrapper<PostAuditFile> fileWrapper = new LambdaQueryWrapper<>();
+            fileWrapper.eq(PostAuditFile::getAuditId, audit.getId())
+                    .eq(PostAuditFile::getType, "CONTENT");
+            List<PostAuditFile> auditFiles = postAuditFileMapper.selectList(fileWrapper);
+            List<Long> contentFileIds = auditFiles.stream()
+                    .map(PostAuditFile::getFileId)
+                    .collect(Collectors.toList());
+            vo.setContentFileIds(contentFileIds);
+
+            voList.add(vo);
+        }
+        return voList;
     }
 
     // ==================== 私有方法 ====================

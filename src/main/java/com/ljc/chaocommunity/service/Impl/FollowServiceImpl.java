@@ -1,11 +1,13 @@
 package com.ljc.chaocommunity.service.Impl;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.ljc.chaocommunity.exception.BusinessException;
 import com.ljc.chaocommunity.mapper.UserFollowMapper;
 import com.ljc.chaocommunity.mapper.UserMapper;
 import com.ljc.chaocommunity.pojo.entity.User;
 import com.ljc.chaocommunity.pojo.entity.UserFollow;
+import com.ljc.chaocommunity.pojo.result.PageResult;
 import com.ljc.chaocommunity.pojo.vo.FollowCountVO;
 import com.ljc.chaocommunity.pojo.vo.FollowVO;
 import com.ljc.chaocommunity.service.FollowService;
@@ -35,13 +37,11 @@ public class FollowServiceImpl implements FollowService {
             throw new BusinessException("不能关注自己");
         }
 
-        // 校验被关注者存在
         User followee = userMapper.selectById(followeeId);
         if (followee == null) {
             throw new BusinessException("用户不存在");
         }
 
-        // 检查是否已关注（利用唯一键 uk_follower_followee）
         LambdaQueryWrapper<UserFollow> wrapper = new LambdaQueryWrapper<>();
         wrapper.eq(UserFollow::getFollowerId, currentUserId)
                 .eq(UserFollow::getFolloweeId, followeeId);
@@ -49,18 +49,15 @@ public class FollowServiceImpl implements FollowService {
             throw new BusinessException("已关注该用户");
         }
 
-        // 插入关注记录
         UserFollow uf = new UserFollow();
         uf.setFollowerId(currentUserId);
         uf.setFolloweeId(followeeId);
         userFollowMapper.insert(uf);
 
-        // 更新冗余计数：关注者 follow_count +1
         User follower = userMapper.selectById(currentUserId);
         follower.setFollowCount(follower.getFollowCount() + 1);
         userMapper.updateById(follower);
 
-        // 被关注者 follower_count +1
         followee.setFollowerCount(followee.getFollowerCount() + 1);
         userMapper.updateById(followee);
     }
@@ -79,7 +76,6 @@ public class FollowServiceImpl implements FollowService {
             throw new BusinessException("用户不存在");
         }
 
-        // 删除关注记录
         LambdaQueryWrapper<UserFollow> wrapper = new LambdaQueryWrapper<>();
         wrapper.eq(UserFollow::getFollowerId, currentUserId)
                 .eq(UserFollow::getFolloweeId, followeeId);
@@ -88,12 +84,10 @@ public class FollowServiceImpl implements FollowService {
             throw new BusinessException("未关注该用户");
         }
 
-        // 更新冗余计数：关注者 follow_count -1
         User follower = userMapper.selectById(currentUserId);
         follower.setFollowCount(Math.max(0, follower.getFollowCount() - 1));
         userMapper.updateById(follower);
 
-        // 被关注者 follower_count -1
         followee.setFollowerCount(Math.max(0, followee.getFollowerCount() - 1));
         userMapper.updateById(followee);
     }
@@ -112,33 +106,60 @@ public class FollowServiceImpl implements FollowService {
     }
 
     @Override
-    public List<FollowVO> getFollowingList(Long userId) {
-        if (userId == null) {
-            userId = SecurityUtils.getCurrentUserId();
+    public java.util.Map<Long, Boolean> isFollowingBatch(java.util.List<Long> userIds) {
+        Long currentUserId = SecurityUtils.getCurrentUserId();
+        java.util.Map<Long, Boolean> result = new java.util.HashMap<>();
+        if (userIds == null || userIds.isEmpty()) {
+            return result;
         }
-
-        // 查询该用户关注的记录，按时间倒序
         LambdaQueryWrapper<UserFollow> wrapper = new LambdaQueryWrapper<>();
-        wrapper.eq(UserFollow::getFollowerId, userId)
-                .orderByDesc(UserFollow::getCreateTime);
-        List<UserFollow> follows = userFollowMapper.selectList(wrapper);
+        wrapper.eq(UserFollow::getFollowerId, currentUserId)
+                .in(UserFollow::getFolloweeId, userIds);
+        java.util.Set<Long> followedIds = userFollowMapper.selectList(wrapper).stream()
+                .map(UserFollow::getFolloweeId)
+                .collect(java.util.stream.Collectors.toSet());
+        for (Long userId : userIds) {
+            if (currentUserId.equals(userId)) {
+                result.put(userId, false);
+            } else {
+                result.put(userId, followedIds.contains(userId));
+            }
+        }
+        return result;
+    }
 
-        return buildFollowVOList(follows, "followee");
+    // ==================== 查自己（需登录）====================
+
+    @Override
+    public PageResult<FollowVO> getMyFollowing(int page, int size) {
+        Long currentUserId = SecurityUtils.getCurrentUserId();
+        return queryFollowingList(currentUserId, page, size);
     }
 
     @Override
-    public List<FollowVO> getFollowerList(Long userId) {
-        if (userId == null) {
-            userId = SecurityUtils.getCurrentUserId();
+    public PageResult<FollowVO> getMyFollowers(int page, int size) {
+        Long currentUserId = SecurityUtils.getCurrentUserId();
+        return queryFollowerList(currentUserId, page, size);
+    }
+
+    // ==================== 查别人（公开）====================
+
+    @Override
+    public PageResult<FollowVO> getUserFollowing(Long userId, int page, int size) {
+        User user = userMapper.selectById(userId);
+        if (user == null) {
+            throw new BusinessException("用户不存在");
         }
+        return queryFollowingList(userId, page, size);
+    }
 
-        // 查询关注该用户的记录（粉丝），按时间倒序
-        LambdaQueryWrapper<UserFollow> wrapper = new LambdaQueryWrapper<>();
-        wrapper.eq(UserFollow::getFolloweeId, userId)
-                .orderByDesc(UserFollow::getCreateTime);
-        List<UserFollow> follows = userFollowMapper.selectList(wrapper);
-
-        return buildFollowVOList(follows, "follower");
+    @Override
+    public PageResult<FollowVO> getUserFollowers(Long userId, int page, int size) {
+        User user = userMapper.selectById(userId);
+        if (user == null) {
+            throw new BusinessException("用户不存在");
+        }
+        return queryFollowerList(userId, page, size);
     }
 
     @Override
@@ -150,15 +171,34 @@ public class FollowServiceImpl implements FollowService {
         return new FollowCountVO(user.getFollowCount(), user.getFollowerCount());
     }
 
+    // ==================== 私有方法 ====================
+
+    /** 分页查询某个用户的关注列表 */
+    private PageResult<FollowVO> queryFollowingList(Long userId, int page, int size) {
+        Page<UserFollow> p = new Page<>(page, size);
+        LambdaQueryWrapper<UserFollow> wrapper = new LambdaQueryWrapper<>();
+        wrapper.eq(UserFollow::getFollowerId, userId)
+                .orderByDesc(UserFollow::getCreateTime);
+        Page<UserFollow> result = userFollowMapper.selectPage(p, wrapper);
+        return new PageResult<>(result.getTotal(), buildFollowVOList(result.getRecords(), "followee"));
+    }
+
+    /** 分页查询某个用户的粉丝列表 */
+    private PageResult<FollowVO> queryFollowerList(Long userId, int page, int size) {
+        Page<UserFollow> p = new Page<>(page, size);
+        LambdaQueryWrapper<UserFollow> wrapper = new LambdaQueryWrapper<>();
+        wrapper.eq(UserFollow::getFolloweeId, userId)
+                .orderByDesc(UserFollow::getCreateTime);
+        Page<UserFollow> result = userFollowMapper.selectPage(p, wrapper);
+        return new PageResult<>(result.getTotal(), buildFollowVOList(result.getRecords(), "follower"));
+    }
+
     /**
      * 根据关注记录构建 FollowVO 列表
-     * @param follows 关注记录列表
-     * @param type "followee"=查询的是关注的人 / "follower"=查询的是粉丝
      */
     private List<FollowVO> buildFollowVOList(List<UserFollow> follows, String type) {
         List<FollowVO> voList = new ArrayList<>();
         for (UserFollow uf : follows) {
-            // 根据 type 决定查哪个人
             Long targetUserId = "followee".equals(type) ? uf.getFolloweeId() : uf.getFollowerId();
             User user = userMapper.selectById(targetUserId);
             if (user == null) continue;

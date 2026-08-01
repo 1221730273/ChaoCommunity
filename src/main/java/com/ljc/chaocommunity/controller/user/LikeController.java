@@ -1,4 +1,4 @@
-package com.ljc.chaocommunity.controller;
+package com.ljc.chaocommunity.controller.user;
 
 import com.ljc.chaocommunity.pojo.result.Result;
 import com.ljc.chaocommunity.service.LikeService;
@@ -7,6 +7,7 @@ import io.swagger.v3.oas.annotations.tags.Tag;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.web.bind.annotation.*;
 
+import java.util.List;
 import java.util.Map;
 
 @RestController
@@ -39,6 +40,12 @@ public class LikeController {
         return Result.success(Map.of("liked", likeService.isPostLiked(postId)));
     }
 
+    @PostMapping("/post/status/batch")
+    @Operation(summary = "批量查询帖子点赞状态")
+    public Result<Map<Long, Boolean>> isPostLikedBatch(@RequestBody List<Long> postIds) {
+        return Result.success(likeService.isPostLikedBatch(postIds));
+    }
+
     // ==================== 评论点赞 ====================
 
     @PostMapping("/comment/{commentId}")
@@ -59,5 +66,11 @@ public class LikeController {
     @Operation(summary = "查询当前用户是否已点赞评论")
     public Result<Map<String, Boolean>> isCommentLiked(@PathVariable Long commentId) {
         return Result.success(Map.of("liked", likeService.isCommentLiked(commentId)));
+    }
+
+    @PostMapping("/comment/status/batch")
+    @Operation(summary = "批量查询评论点赞状态")
+    public Result<Map<Long, Boolean>> isCommentLikedBatch(@RequestBody List<Long> commentIds) {
+        return Result.success(likeService.isCommentLikedBatch(commentIds));
     }
 }

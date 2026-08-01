@@ -4,6 +4,7 @@ import com.ljc.chaocommunity.filter.TokenAuthenticationFilter;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.http.HttpMethod;
 import org.springframework.security.authentication.AuthenticationManager;
 import org.springframework.security.config.annotation.authentication.configuration.AuthenticationConfiguration;
 import org.springframework.security.config.annotation.method.configuration.EnableMethodSecurity;
@@ -14,6 +15,7 @@ import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
+import org.springframework.security.web.util.matcher.RegexRequestMatcher;
 
 /**
  * Spring Security 安全配置
@@ -43,9 +45,46 @@ public class SecurityConfig {
                 .sessionManagement(session -> session
                         .sessionCreationPolicy(SessionCreationPolicy.STATELESS)
                 )
-                // TODO 暂时放行所有请求（后续再设计拦截规则）
+                // 权限规则
                 .authorizeHttpRequests(auth -> auth
-                        .anyRequest().permitAll()
+                        // ===== 完全放开的接口（游客可访问）=====
+
+                        // 认证
+                        .requestMatchers("/auth/login", "/auth/register").permitAll()
+
+                        // 帖子浏览
+                        .requestMatchers(HttpMethod.GET, "/post/list").permitAll()
+                        .requestMatchers(HttpMethod.GET, "/post/featured").permitAll()
+                        .requestMatchers(HttpMethod.GET, "/post/user/**").permitAll()
+                        // 帖子详情：仅匹配 /post/数字ID
+                        .requestMatchers(new RegexRequestMatcher("/post/\\d+", "GET")).permitAll()
+
+                        // 用户主页
+                        .requestMatchers(HttpMethod.GET, "/user/*/posts").permitAll()
+                        .requestMatchers(HttpMethod.GET, "/user/*/profile").permitAll()
+
+                        // /follow/me 需要认证（必须在 /* 通配之前）
+                        .requestMatchers(HttpMethod.GET, "/follow/me/**").authenticated()
+
+                        // 查别人的关注数据（公开）
+                        .requestMatchers(HttpMethod.GET, "/follow/*/count").permitAll()
+                        .requestMatchers(HttpMethod.GET, "/follow/*/following").permitAll()
+                        .requestMatchers(HttpMethod.GET, "/follow/*/followers").permitAll()
+
+                        // 分类
+                        .requestMatchers(HttpMethod.GET, "/category/**").permitAll()
+
+                        // 标签
+                        .requestMatchers(HttpMethod.GET, "/tag/**").permitAll()
+
+                        // 轮播图
+                        .requestMatchers(HttpMethod.GET, "/banner/list").permitAll()
+
+                        // 公告
+                        .requestMatchers(HttpMethod.GET, "/announcement/**").permitAll()
+
+                        // ===== 其余接口需要认证 =====
+                        .anyRequest().authenticated()
                 )
                 // 关闭 CSRF
                 .csrf(csrf -> csrf.disable())

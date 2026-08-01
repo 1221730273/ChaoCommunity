@@ -1,4 +1,4 @@
-package com.ljc.chaocommunity.controller;
+package com.ljc.chaocommunity.controller.user;
 
 import com.ljc.chaocommunity.pojo.dto.CommentDTO;
 import com.ljc.chaocommunity.pojo.dto.CommentPageQueryDTO;

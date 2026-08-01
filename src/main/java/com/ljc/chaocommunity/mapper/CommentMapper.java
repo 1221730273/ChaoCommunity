@@ -19,4 +19,7 @@ public interface CommentMapper extends BaseMapper<Comment> {
     Page<CommentVO> selectPageVoByUserId(Page<CommentVO> page,
                                          @Param("userId") Long userId,
                                          @Param("sort") String sort);
+
+    /** 分页查询所有评论（管理端） */
+    Page<CommentVO> selectPageVoAll(Page<CommentVO> page);
 }

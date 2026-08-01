@@ -1,7 +1,8 @@
-package com.ljc.chaocommunity.controller;
+package com.ljc.chaocommunity.controller.admin;
 
 import com.ljc.chaocommunity.pojo.result.Result;
 import com.ljc.chaocommunity.pojo.vo.UserApplyVO;
+import com.ljc.chaocommunity.pojo.vo.UserVO;
 import com.ljc.chaocommunity.service.UserService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
@@ -18,6 +19,35 @@ public class AdminUserController {
 
     @Autowired
     private UserService userService;
+
+    // ===== 用户管理 =====
+
+    @GetMapping("/list")
+    @Operation(summary = "查询所有用户")
+    public Result<List<UserVO>> listAll() {
+        return Result.success(userService.listAllUsers());
+    }
+
+    @GetMapping("/{userId}")
+    @Operation(summary = "根据ID查询用户详情")
+    public Result<UserVO> getUserDetail(@PathVariable Long userId) {
+        return Result.success(userService.adminGetUserDetail(userId));
+    }
+
+    @GetMapping("/search")
+    @Operation(summary = "根据用户名/昵称搜索用户")
+    public Result<List<UserVO>> search(@RequestParam String keyword) {
+        return Result.success(userService.searchUsers(keyword));
+    }
+
+    @PutMapping("/{userId}/ban")
+    @Operation(summary = "封禁/解封用户")
+    public Result<Void> toggleBan(@PathVariable Long userId) {
+        userService.toggleBanUser(userId);
+        return Result.success();
+    }
+
+    // ===== 用户审核 =====
 
     @GetMapping("/apply/list")
     @Operation(summary = "查询审核列表")

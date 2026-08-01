@@ -1,6 +1,5 @@
 package com.ljc.chaocommunity.filter;
 
-import com.ljc.chaocommunity.exception.BusinessException;
 import com.ljc.chaocommunity.pojo.entity.LoginInfo;
 import com.ljc.chaocommunity.pojo.entity.LoginUser;
 import com.ljc.chaocommunity.pojo.entity.User;
@@ -36,7 +35,7 @@ public class TokenAuthenticationFilter extends OncePerRequestFilter {
         // 1. 从请求头获取 token
         String token = request.getHeader("token");
         if (!StringUtils.hasText(token)) {
-            // 没 token 直接放行，交给后面的过滤器处理（登录接口不需要 token）
+            // 没 token 直接放行（公共接口不需要 token）
             filterChain.doFilter(request, response);
             return;
         }
@@ -44,7 +43,10 @@ public class TokenAuthenticationFilter extends OncePerRequestFilter {
         // 2. 从 Redis 中获取用户信息
         LoginInfo loginInfo = (LoginInfo) redisTemplate.opsForValue().get("auth:token:" + token);
         if (Objects.isNull(loginInfo)) {
-            throw new BusinessException("用户未登录");
+            // Token 无效或过期，不做认证，交给 SecurityConfig 的权限规则处理
+            // 公共接口正常访问，需认证接口会被拦截返回 403
+            filterChain.doFilter(request, response);
+            return;
         }
 
         // 3. LoginInfo → User → LoginUser

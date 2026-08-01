@@ -45,4 +45,17 @@
         </choose>
     </select>
 
+    <!-- 分页查询所有评论（管理端） -->
+    <select id="selectPageVoAll" resultType="com.ljc.chaocommunity.pojo.vo.CommentVO">
+        SELECT c.id, c.post_id, c.user_id, c.parent_id, c.content, c.like_count,
+               c.create_time, c.update_time,
+               u.username, u.nickname, u.avatar,
+               p.title AS post_title
+        FROM post_comment c
+        LEFT JOIN user u ON c.user_id = u.id
+        LEFT JOIN post p ON c.post_id = p.id
+        WHERE c.deleted = 0
+        ORDER BY c.create_time DESC
+    </select>
+
 </mapper>

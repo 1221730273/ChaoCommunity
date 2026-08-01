@@ -23,4 +23,10 @@ public interface LikeService {
 
     /** 查询当前用户是否已点赞评论 */
     boolean isCommentLiked(Long commentId);
+
+    /** 批量查询当前用户对帖子的点赞状态 */
+    java.util.Map<Long, Boolean> isPostLikedBatch(java.util.List<Long> postIds);
+
+    /** 批量查询当前用户对评论的点赞状态 */
+    java.util.Map<Long, Boolean> isCommentLikedBatch(java.util.List<Long> commentIds);
 }

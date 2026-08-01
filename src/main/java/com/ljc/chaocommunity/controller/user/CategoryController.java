@@ -1,4 +1,4 @@
-package com.ljc.chaocommunity.controller;
+package com.ljc.chaocommunity.controller.user;
 
 import com.ljc.chaocommunity.pojo.entity.Category;
 import com.ljc.chaocommunity.pojo.result.Result;
@@ -28,26 +28,5 @@ public class CategoryController {
     @Operation(summary = "查询单个分类")
     public Result<Category> getById(@PathVariable Long id) {
         return Result.success(categoryService.getById(id));
-    }
-
-    @PostMapping
-    @Operation(summary = "新增分类")
-    public Result<Void> create(@RequestBody Category category) {
-        categoryService.create(category);
-        return Result.success();
-    }
-
-    @PutMapping
-    @Operation(summary = "修改分类")
-    public Result<Void> update(@RequestBody Category category) {
-        categoryService.update(category);
-        return Result.success();
-    }
-
-    @DeleteMapping("/{id}")
-    @Operation(summary = "删除分类")
-    public Result<Void> delete(@PathVariable Long id) {
-        categoryService.delete(id);
-        return Result.success();
     }
 }

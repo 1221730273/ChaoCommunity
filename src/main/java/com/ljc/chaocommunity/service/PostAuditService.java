@@ -24,4 +24,9 @@ public interface PostAuditService {
      * 审核拒绝
      */
     void rejectAudit(Long auditId, String reason);
+
+    /**
+     * 根据用户ID查询审核记录
+     */
+    List<PostAuditVO> getAuditListByUserId(Long userId);
 }

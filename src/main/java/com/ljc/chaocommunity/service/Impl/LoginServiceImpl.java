@@ -56,6 +56,11 @@ public class LoginServiceImpl implements LoginService {
         LoginUser loginUser = (LoginUser) authenticate.getPrincipal();
         User u = loginUser.getUser();
 
+        // 检查用户是否被封禁
+        if (u.getStatus() != null && u.getStatus() == 1) {
+            throw new BusinessException("账号已被封禁，请联系管理员");
+        }
+
         //先检查redis中是否已存在该用户 踢掉旧登录
         String oldToken = (String) redisTemplate.opsForValue().get("auth:user:" + u.getId() + ":token");
         if (oldToken != null){

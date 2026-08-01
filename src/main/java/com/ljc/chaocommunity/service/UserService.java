@@ -3,6 +3,7 @@ package com.ljc.chaocommunity.service;
 import com.ljc.chaocommunity.pojo.dto.CoverUpdateDTO;
 import com.ljc.chaocommunity.pojo.dto.UserProfileDTO;
 import com.ljc.chaocommunity.pojo.vo.UserApplyVO;
+import com.ljc.chaocommunity.pojo.vo.UserVO;
 import jakarta.validation.Valid;
 
 import java.util.List;
@@ -16,6 +17,28 @@ public interface UserService {
 
     /** 修改头像 → user_apply (AVATAR) */
     void updateAvatar(@Valid CoverUpdateDTO dto);
+
+    // ===== 用户资料查询 =====
+
+    /** 查看自己的完整资料 */
+    UserVO getMyProfile();
+
+    /** 查看别人的资料（不含隐私字段） */
+    UserVO getUserProfile(Long userId);
+
+    // ===== 管理端：用户管理 =====
+
+    /** 查询所有用户 */
+    List<UserVO> listAllUsers();
+
+    /** 根据ID或用户名查询用户详情 */
+    UserVO adminGetUserDetail(Long userId);
+
+    /** 根据用户名搜索用户 */
+    List<UserVO> searchUsers(String keyword);
+
+    /** 封禁/解封用户 */
+    void toggleBanUser(Long userId);
 
     // ===== 管理端：审核 =====
 

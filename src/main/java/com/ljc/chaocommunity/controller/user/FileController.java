@@ -1,4 +1,4 @@
-package com.ljc.chaocommunity.controller;
+package com.ljc.chaocommunity.controller.user;
 
 import com.ljc.chaocommunity.mapper.FileRecordMapper;
 import com.ljc.chaocommunity.pojo.entity.FileRecord;

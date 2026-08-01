@@ -21,6 +21,9 @@ public class PostAudit {
     /** 原帖子ID（新建帖子时为NULL） */
     private Long postId;
 
+    /** 审核类型 CREATE 新建 / UPDATE 内容更新 / COVER 封面更新 */
+    private String type;
+
     /** 帖子标题 */
     private String title;
 

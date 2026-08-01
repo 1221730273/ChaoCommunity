@@ -95,6 +95,21 @@ public class CommentServiceImpl implements CommentService {
         commentMapper.deleteById(commentId);
     }
 
+    @Override
+    public PageResult<CommentVO> pageQueryAll(int page, int size) {
+        Page<CommentVO> p = new Page<>(page, size);
+        Page<CommentVO> resultPage = commentMapper.selectPageVoAll(p);
+        return new PageResult<>(resultPage.getTotal(), resultPage.getRecords());
+    }
+
+    @Override
+    public void adminDeleteComment(Long commentId) {
+        if (commentMapper.selectById(commentId) == null) {
+            throw new BusinessException("评论不存在");
+        }
+        commentMapper.deleteById(commentId);
+    }
+
 
     //TODO 评论区以后可以加表情和图片
 }

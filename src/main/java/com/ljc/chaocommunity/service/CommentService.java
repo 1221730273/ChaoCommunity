@@ -18,4 +18,10 @@ public interface CommentService {
 
     /** 根据用户ID分页查询评论 */
     PageResult<CommentVO> pageQueryByUserId(CommentPageQueryDTO dto);
+
+    /** 分页查询所有评论（管理端） */
+    PageResult<CommentVO> pageQueryAll(int page, int size);
+
+    /** 删除评论（管理端，不限本人） */
+    void adminDeleteComment(Long commentId);
 }

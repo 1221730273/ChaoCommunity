@@ -11,10 +11,12 @@ import com.ljc.chaocommunity.pojo.entity.FileRecord;
 import com.ljc.chaocommunity.pojo.entity.User;
 import com.ljc.chaocommunity.pojo.entity.UserApply;
 import com.ljc.chaocommunity.pojo.vo.UserApplyVO;
+import com.ljc.chaocommunity.pojo.vo.UserVO;
 import com.ljc.chaocommunity.service.UserService;
 import com.ljc.chaocommunity.util.OssUtil;
 import com.ljc.chaocommunity.util.SecurityUtils;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -35,6 +37,9 @@ public class UserServiceImpl implements UserService {
 
     @Autowired
     private FileRecordMapper fileRecordMapper;
+
+    @Autowired
+    private RedisTemplate<String, Object> redisTemplate;
 
     // ==================== 用户端：提交修改申请 ====================
 
@@ -97,6 +102,114 @@ public class UserServiceImpl implements UserService {
         apply.setAvatarFileId(dto.getFileId());
         apply.setStatus(0);
         userApplyMapper.insert(apply);
+    }
+
+    // ==================== 用户资料查询 ====================
+
+    @Override
+    public UserVO getMyProfile() {
+        Long currentUserId = SecurityUtils.getCurrentUserId();
+        User user = userMapper.selectById(currentUserId);
+        if (user == null) {
+            throw new BusinessException("用户不存在");
+        }
+        return buildUserVO(user, true);
+    }
+
+    @Override
+    public UserVO getUserProfile(Long userId) {
+        User user = userMapper.selectById(userId);
+        if (user == null) {
+            throw new BusinessException("用户不存在");
+        }
+        return buildUserVO(user, false);
+    }
+
+    /**
+     * User → UserVO
+     * @param includeEmail 是否包含邮箱（仅自己可见）
+     */
+    private UserVO buildUserVO(User user, boolean includeEmail) {
+        UserVO vo = new UserVO();
+        vo.setId(user.getId());
+        vo.setUsername(user.getUsername());
+        vo.setNickname(user.getNickname());
+        vo.setAvatar(user.getAvatar());
+        vo.setSignature(user.getSignature());
+        vo.setFollowCount(user.getFollowCount());
+        vo.setFollowerCount(user.getFollowerCount());
+        vo.setRole(user.getRole());
+        vo.setStatus(user.getStatus());
+        vo.setCreateTime(user.getCreateTime());
+
+        if (includeEmail) {
+            vo.setEmail(user.getEmail());
+        }
+
+        return vo;
+    }
+
+    // ==================== 管理端：用户管理 ====================
+
+    @Override
+    public List<UserVO> listAllUsers() {
+        List<User> users = userMapper.selectList(null);
+        List<UserVO> voList = new ArrayList<>();
+        for (User user : users) {
+            voList.add(buildUserVO(user, true));
+        }
+        return voList;
+    }
+
+    @Override
+    public UserVO adminGetUserDetail(Long userId) {
+        User user = userMapper.selectById(userId);
+        if (user == null) {
+            throw new BusinessException("用户不存在");
+        }
+        return buildUserVO(user, true);
+    }
+
+    @Override
+    public List<UserVO> searchUsers(String keyword) {
+        LambdaQueryWrapper<User> wrapper = new LambdaQueryWrapper<>();
+        wrapper.like(User::getUsername, keyword)
+                .or()
+                .like(User::getNickname, keyword)
+                .orderByDesc(User::getCreateTime);
+        List<User> users = userMapper.selectList(wrapper);
+        List<UserVO> voList = new ArrayList<>();
+        for (User user : users) {
+            voList.add(buildUserVO(user, true));
+        }
+        return voList;
+    }
+
+    @Override
+    @Transactional
+    public void toggleBanUser(Long userId) {
+        User user = userMapper.selectById(userId);
+        if (user == null) {
+            throw new BusinessException("用户不存在");
+        }
+        // 不能封禁管理员
+        if (user.getRole() == 1) {
+            throw new BusinessException("不能封禁管理员");
+        }
+
+        // 切换封禁状态
+        int newStatus = user.getStatus() == 1 ? 0 : 1;
+        user.setStatus(newStatus);
+        userMapper.updateById(user);
+
+        // 封禁时踢掉该用户的登录token
+        if (newStatus == 1) {
+            String token = (String) redisTemplate.opsForValue().get("auth:user:" + userId + ":token");
+            if (token != null) {
+                redisTemplate.delete("auth:token:" + token);
+                redisTemplate.delete("auth:user:" + userId + ":token");
+            }
+        }
     }
 
     // ==================== 管理端：审核 ====================

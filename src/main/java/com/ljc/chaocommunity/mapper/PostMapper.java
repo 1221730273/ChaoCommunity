@@ -34,4 +34,12 @@ public interface PostMapper extends BaseMapper<Post> {
                                       @Param("sort") String sort,
                                       @Param("includeAllStatus") Boolean includeAllStatus);
 
+    /** 分页查询所有帖子（管理端，包含隐藏） */
+    Page<PostVO> selectPageVoAll(Page<PostVO> page,
+                                 @Param("categoryId") Long categoryId,
+                                 @Param("sort") String sort);
+
+    /** 分页查询精选帖子 */
+    Page<PostVO> selectPageVoFeatured(Page<PostVO> page);
+
 }

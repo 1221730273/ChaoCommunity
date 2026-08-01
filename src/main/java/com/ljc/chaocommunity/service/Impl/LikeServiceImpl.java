@@ -161,4 +161,42 @@ public class LikeServiceImpl implements LikeService {
                 .eq(CommentLike::getCommentId, commentId);
         return commentLikeMapper.selectCount(wrapper) > 0;
     }
+
+    @Override
+    public java.util.Map<Long, Boolean> isPostLikedBatch(java.util.List<Long> postIds) {
+        Long currentUserId = SecurityUtils.getCurrentUserId();
+        java.util.Map<Long, Boolean> result = new java.util.HashMap<>();
+        if (postIds == null || postIds.isEmpty()) {
+            return result;
+        }
+        LambdaQueryWrapper<PostLike> wrapper = new LambdaQueryWrapper<>();
+        wrapper.eq(PostLike::getUserId, currentUserId)
+                .in(PostLike::getPostId, postIds);
+        java.util.Set<Long> likedIds = postLikeMapper.selectList(wrapper).stream()
+                .map(PostLike::getPostId)
+                .collect(java.util.stream.Collectors.toSet());
+        for (Long postId : postIds) {
+            result.put(postId, likedIds.contains(postId));
+        }
+        return result;
+    }
+
+    @Override
+    public java.util.Map<Long, Boolean> isCommentLikedBatch(java.util.List<Long> commentIds) {
+        Long currentUserId = SecurityUtils.getCurrentUserId();
+        java.util.Map<Long, Boolean> result = new java.util.HashMap<>();
+        if (commentIds == null || commentIds.isEmpty()) {
+            return result;
+        }
+        LambdaQueryWrapper<CommentLike> wrapper = new LambdaQueryWrapper<>();
+        wrapper.eq(CommentLike::getUserId, currentUserId)
+                .in(CommentLike::getCommentId, commentIds);
+        java.util.Set<Long> likedIds = commentLikeMapper.selectList(wrapper).stream()
+                .map(CommentLike::getCommentId)
+                .collect(java.util.stream.Collectors.toSet());
+        for (Long commentId : commentIds) {
+            result.put(commentId, likedIds.contains(commentId));
+        }
+        return result;
+    }
 }

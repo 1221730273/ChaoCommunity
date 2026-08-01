@@ -1,4 +1,4 @@
-package com.ljc.chaocommunity.controller;
+package com.ljc.chaocommunity.controller.user;
 
 import com.ljc.chaocommunity.pojo.dto.CoverUpdateDTO;
 import com.ljc.chaocommunity.pojo.dto.PostPageQueryDTO;
@@ -28,6 +28,18 @@ public class UserController {
     @Autowired
     private UserService userService;
 
+    @GetMapping("/me")
+    @Operation(summary = "查看自己的完整资料")
+    public Result<com.ljc.chaocommunity.pojo.vo.UserVO> getMyProfile() {
+        return Result.success(userService.getMyProfile());
+    }
+
+    @GetMapping("/{userId}/profile")
+    @Operation(summary = "查看别人的资料（不含隐私字段）")
+    public Result<com.ljc.chaocommunity.pojo.vo.UserVO> getUserProfile(@PathVariable Long userId) {
+        return Result.success(userService.getUserProfile(userId));
+    }
+
     @PutMapping("/profile")
     @Operation(summary = "修改用户资料（需审核）")
     public Result<Void> updateProfile(@Valid @RequestBody UserProfileDTO dto) {
@@ -47,6 +59,8 @@ public class UserController {
     public Result<PageResult<PostVO>> getUserPosts(@PathVariable Long userId, PostPageQueryDTO dto) {
         return Result.success(postService.getUserPosts(userId, dto));
     }
+
+
 
 
     //TODO 后续给user数据库表增加是否封禁字段 配合springsecurity 实现用户封禁

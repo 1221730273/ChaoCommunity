@@ -1,4 +1,4 @@
-package com.ljc.chaocommunity.controller;
+package com.ljc.chaocommunity.controller.admin;
 
 import com.ljc.chaocommunity.pojo.dto.UpdateBannerDTO;
 import com.ljc.chaocommunity.pojo.result.Result;

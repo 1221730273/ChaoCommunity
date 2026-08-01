@@ -41,6 +41,18 @@ public interface PostService {
     /** 删除自己审核失败的记录（status=2） */
     void deleteFailedAudit(Long auditId);
 
+    /** 分页查询所有帖子（管理端，包含隐藏） */
+    PageResult<PostVO> pageQueryAll(PostPageQueryDTO dto);
+
+    /** 删除帖子（管理端，不限本人） */
+    void adminDeletePost(Long postId);
+
+    /** 设置/取消精选 */
+    void toggleFeatured(Long postId);
+
+    /** 分页查询精选帖子 */
+    PageResult<PostVO> pageQueryFeatured(int page, int size);
+
     /** 浏览量+1 */
     void incrementViewCount(Long postId);
 }
