@@ -372,8 +372,17 @@ public class PostServiceImpl implements PostService {
     @Override
     public PageResult<PostVO> pageQuery(PostPageQueryDTO dto) {
         Page<PostVO> page = new Page<>(dto.getPage(), dto.getSize());
-        Long currentUserId = "follow".equals(dto.getSort()) ? SecurityUtils.getCurrentUserId() : null;
-        Page<PostVO> resultPage = postMapper.selectPageVo(page, dto.getCategoryId(), dto.getSort(), currentUserId);
+        Page<PostVO> resultPage;
+        switch (dto.getSort()) {
+            case "hot":
+                resultPage = postMapper.selectPageVoHot(page, dto.getCategoryId());
+                break;
+            case "follow":
+                resultPage = postMapper.selectPageVoFollow(page, dto.getCategoryId(), SecurityUtils.getCurrentUserId());
+                break;
+            default:
+                resultPage = postMapper.selectPageVoNewest(page, dto.getCategoryId());
+        }
         fillTags(resultPage.getRecords());
         return new PageResult<>(resultPage.getTotal(), resultPage.getRecords());
     }
@@ -389,7 +398,9 @@ public class PostServiceImpl implements PostService {
         boolean includeAllStatus = currentUserId.equals(userId);
 
         Page<PostVO> page = new Page<>(dto.getPage(), dto.getSize());
-        Page<PostVO> resultPage = postMapper.selectPageVoByUserId(page, userId, dto.getSort(), includeAllStatus);
+        Page<PostVO> resultPage = "hot".equals(dto.getSort())
+                ? postMapper.selectPageVoByUserIdHot(page, userId, includeAllStatus)
+                : postMapper.selectPageVoByUserIdNewest(page, userId, includeAllStatus);
         fillTags(resultPage.getRecords());
         return new PageResult<>(resultPage.getTotal(), resultPage.getRecords());
     }
@@ -435,11 +446,46 @@ public class PostServiceImpl implements PostService {
     }
 
     @Override
-    public PageResult<PostVO> pageQueryFeatured(int page, int size) {
+    public PageResult<PostVO> pageQueryFeatured(int page, int size, String sort) {
         Page<PostVO> p = new Page<>(page, size);
-        Page<PostVO> resultPage = postMapper.selectPageVoFeatured(p);
+        Page<PostVO> resultPage = "hot".equals(sort)
+                ? postMapper.selectPageVoFeaturedHot(p)
+                : postMapper.selectPageVoFeaturedNewest(p);
         fillTags(resultPage.getRecords());
         return new PageResult<>(resultPage.getTotal(), resultPage.getRecords());
+    }
+
+    /**
+     * 首页最新帖子：按创建时间倒序取 limit 条（绕过 MP 分页插件，直接 LIMIT）
+     */
+    @Override
+    public List<PostVO> getLatestPosts(int limit) {
+        // 直接查 post 表：status=0, deleted=0, 按 create_time 倒序, LIMIT
+        LambdaQueryWrapper<Post> wrapper = new LambdaQueryWrapper<>();
+        wrapper.eq(Post::getStatus, 0)
+                .eq(Post::getDeleted, 0)
+                .orderByDesc(Post::getCreateTime)
+                .last("LIMIT " + limit);
+        List<Post> posts = postMapper.selectList(wrapper);
+        List<PostVO> voList = posts.stream().map(post -> {
+            PostVO vo = postMapper.getPostVOById(post.getId());
+            return vo;
+        }).collect(Collectors.toList());
+        return voList;
+    }
+
+    /**
+     * 首页最新精选帖子：is_featured=1 + status=0，按创建时间倒序取 limit 条
+     */
+    @Override
+    public List<PostVO> getLatestFeatured(int limit) {
+        LambdaQueryWrapper<Post> wrapper = new LambdaQueryWrapper<>();
+        wrapper.eq(Post::getIsFeatured, 1)
+                .eq(Post::getStatus, 0)
+                .orderByDesc(Post::getCreateTime)
+                .last("LIMIT " + limit);
+        List<Post> posts = postMapper.selectList(wrapper);
+        return posts.stream().map(post -> postMapper.getPostVOById(post.getId())).collect(Collectors.toList());
     }
 
     @Override
@@ -482,7 +528,9 @@ public class PostServiceImpl implements PostService {
     public PageResult<PostVO> getMyPosts(PostPageQueryDTO dto) {
         Long currentUserId = SecurityUtils.getCurrentUserId();
         Page<PostVO> page = new Page<>(dto.getPage(), dto.getSize());
-        Page<PostVO> resultPage = postMapper.selectPageVoByUserId(page, currentUserId, dto.getSort(), true);
+        Page<PostVO> resultPage = "hot".equals(dto.getSort())
+                ? postMapper.selectPageVoByUserIdHot(page, currentUserId, true)
+                : postMapper.selectPageVoByUserIdNewest(page, currentUserId, true);
         fillTags(resultPage.getRecords());
         return new PageResult<>(resultPage.getTotal(), resultPage.getRecords());
     }
@@ -559,7 +607,9 @@ public class PostServiceImpl implements PostService {
     @Override
     public PageResult<PostVO> pageQueryAll(PostPageQueryDTO dto) {
         Page<PostVO> page = new Page<>(dto.getPage(), dto.getSize());
-        Page<PostVO> resultPage = postMapper.selectPageVoAll(page, dto.getCategoryId(), dto.getSort());
+        Page<PostVO> resultPage = "hot".equals(dto.getSort())
+                ? postMapper.selectPageVoAllHot(page, dto.getCategoryId())
+                : postMapper.selectPageVoAllNewest(page, dto.getCategoryId());
         fillTags(resultPage.getRecords());
         return new PageResult<>(resultPage.getTotal(), resultPage.getRecords());
     }

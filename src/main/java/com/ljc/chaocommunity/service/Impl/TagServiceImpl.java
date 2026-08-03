@@ -52,8 +52,9 @@ public class TagServiceImpl implements TagService {
 
         // 处理图标
         if (dto.getFileId() != null) {
-            String iconUrl = moveIcon(dto.getFileId(), null);
+            String iconUrl = moveIcon(dto.getFileId());
             tag.setIcon(iconUrl);
+            tag.setFileId(dto.getFileId());
         }
 
         tagMapper.insert(tag);
@@ -69,10 +70,15 @@ public class TagServiceImpl implements TagService {
 
         tag.setName(dto.getName());
 
-        // 处理图标：传了新fileId才处理
+        // 处理图标：传了新 fileId 才更换
         if (dto.getFileId() != null) {
-            String iconUrl = moveIcon(dto.getFileId(), tag.getIcon());
+            // 1. 释放旧图标的 FileRecord
+            releaseFileRecord(tag.getFileId());
+
+            // 2. 移动新文件
+            String iconUrl = moveIcon(dto.getFileId());
             tag.setIcon(iconUrl);
+            tag.setFileId(dto.getFileId());
         }
 
         tagMapper.updateById(tag);
@@ -86,27 +92,18 @@ public class TagServiceImpl implements TagService {
             throw new BusinessException("标签不存在");
         }
 
-        // 如果有图标，把对应file_record的status置为0
-        if (tag.getIcon() != null) {
-            LambdaQueryWrapper<FileRecord> wrapper = new LambdaQueryWrapper<>();
-            wrapper.eq(FileRecord::getUrl, tag.getIcon());
-            FileRecord fileRecord = fileRecordMapper.selectOne(wrapper);
-            if (fileRecord != null) {
-                fileRecord.setStatus(0);
-                fileRecordMapper.updateById(fileRecord);
-            }
-        }
+        // 释放图标对应的 FileRecord
+        releaseFileRecord(tag.getFileId());
 
         tagMapper.deleteById(id);
     }
 
+    // ==================== private ====================
+
     /**
-     * 移动图标文件：temp/ → tag/icon/
-     * @param fileId 新文件ID
-     * @param oldIconUrl 旧图标URL（没有则传null）
-     * @return 新图标URL
+     * 移动文件 temp/ → tag/icon/，更新 FileRecord status=1，返回新 URL
      */
-    private String moveIcon(Long fileId, String oldIconUrl) {
+    private String moveIcon(Long fileId) {
         FileRecord fileRecord = fileRecordMapper.selectById(fileId);
         if (fileRecord == null) {
             throw new BusinessException("文件不存在");
@@ -121,28 +118,27 @@ public class TagServiceImpl implements TagService {
             throw new BusinessException("非法文件");
         }
 
-        // 把旧图标的file_record的status置为0
-        if (oldIconUrl != null) {
-            LambdaQueryWrapper<FileRecord> wrapper = new LambdaQueryWrapper<>();
-            wrapper.eq(FileRecord::getUrl, oldIconUrl);
-            FileRecord oldFileRecord = fileRecordMapper.selectOne(wrapper);
-            if (oldFileRecord != null) {
-                oldFileRecord.setStatus(0);
-                fileRecordMapper.updateById(oldFileRecord);
-            }
-        }
-
-        // 移动文件
         String oldObjectKey = fileRecord.getFilePath();
         String newObjectKey = oldObjectKey.replace("temp/", "tag/icon/");
         OssUtil.UploadResult moveResult = ossUtil.move(oldObjectKey, newObjectKey);
 
-        // 更新file_record
         fileRecord.setFilePath(moveResult.objectKey());
         fileRecord.setUrl(moveResult.url());
         fileRecord.setStatus(1);
         fileRecordMapper.updateById(fileRecord);
 
         return moveResult.url();
+    }
+
+    /**
+     * 释放 FileRecord：status 置为 0
+     */
+    private void releaseFileRecord(Long fileId) {
+        if (fileId == null) return;
+        FileRecord fileRecord = fileRecordMapper.selectById(fileId);
+        if (fileRecord != null && fileRecord.getStatus() == 1) {
+            fileRecord.setStatus(0);
+            fileRecordMapper.updateById(fileRecord);
+        }
     }
 }

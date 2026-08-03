@@ -9,6 +9,8 @@ import io.swagger.v3.oas.annotations.tags.Tag;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.web.bind.annotation.*;
 
+import java.util.List;
+
 @RestController
 @RequestMapping("/announcement")
 @Tag(name = "公告管理")
@@ -32,7 +34,7 @@ public class AnnouncementController {
 
     @GetMapping("/latest")
     @Operation(summary = "最新公告")
-    public Result<AnnouncementVO> getLatest() {
-        return Result.success(announcementService.getLatest());
+    public Result<List<AnnouncementVO>> getLatest(@RequestParam(defaultValue = "4") int limit) {
+        return Result.success(announcementService.getLatest(limit));
     }
 }

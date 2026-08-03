@@ -9,6 +9,8 @@ import jakarta.validation.Valid;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.web.bind.annotation.*;
 
+import java.util.List;
+
 @RestController
 @RequestMapping("/admin/tag")
 @Tag(name = "标签管理（管理端）")
@@ -16,6 +18,12 @@ public class AdminTagController {
 
     @Autowired
     private TagService tagService;
+
+    @GetMapping("/list")
+    @Operation(summary = "查询所有标签")
+    public Result<List<com.ljc.chaocommunity.pojo.entity.Tag>> list() {
+        return Result.success(tagService.listAll());
+    }
 
     @PostMapping
     @Operation(summary = "新增标签")

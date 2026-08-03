@@ -22,24 +22,40 @@ public interface PostMapper extends BaseMapper<Post> {
             "WHERE p.id = #{postId}")
     PostVO getPostVOById(Long postId);
 
-    /** 首页：按分类 + new/hot/follow */
-    Page<PostVO> selectPageVo(Page<PostVO> page,
-                              @Param("categoryId") Long categoryId,
-                              @Param("sort") String sort,
-                              @Param("currentUserId") Long currentUserId);
+    // ===== 首页 =====
 
-    /** 用户主页：按用户ID + new/hot，includeAllStatus=true时不过滤status */
-    Page<PostVO> selectPageVoByUserId(Page<PostVO> page,
-                                      @Param("userId") Long userId,
-                                      @Param("sort") String sort,
-                                      @Param("includeAllStatus") Boolean includeAllStatus);
+    Page<PostVO> selectPageVoNewest(Page<PostVO> page,
+                                    @Param("categoryId") Long categoryId);
 
-    /** 分页查询所有帖子（管理端，包含隐藏） */
-    Page<PostVO> selectPageVoAll(Page<PostVO> page,
-                                 @Param("categoryId") Long categoryId,
-                                 @Param("sort") String sort);
+    Page<PostVO> selectPageVoHot(Page<PostVO> page,
+                                 @Param("categoryId") Long categoryId);
 
-    /** 分页查询精选帖子 */
-    Page<PostVO> selectPageVoFeatured(Page<PostVO> page);
+    Page<PostVO> selectPageVoFollow(Page<PostVO> page,
+                                    @Param("categoryId") Long categoryId,
+                                    @Param("currentUserId") Long currentUserId);
+
+    // ===== 用户主页 =====
+
+    Page<PostVO> selectPageVoByUserIdNewest(Page<PostVO> page,
+                                            @Param("userId") Long userId,
+                                            @Param("includeAllStatus") Boolean includeAllStatus);
+
+    Page<PostVO> selectPageVoByUserIdHot(Page<PostVO> page,
+                                          @Param("userId") Long userId,
+                                          @Param("includeAllStatus") Boolean includeAllStatus);
+
+    // ===== 管理端 =====
+
+    Page<PostVO> selectPageVoAllNewest(Page<PostVO> page,
+                                       @Param("categoryId") Long categoryId);
+
+    Page<PostVO> selectPageVoAllHot(Page<PostVO> page,
+                                    @Param("categoryId") Long categoryId);
+
+    // ===== 精选 =====
+
+    Page<PostVO> selectPageVoFeaturedNewest(Page<PostVO> page);
+
+    Page<PostVO> selectPageVoFeaturedHot(Page<PostVO> page);
 
 }

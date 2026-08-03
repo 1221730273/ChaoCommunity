@@ -1,5 +1,6 @@
 package com.ljc.chaocommunity.controller.admin;
 
+import com.ljc.chaocommunity.pojo.dto.CreateBannerDTO;
 import com.ljc.chaocommunity.pojo.dto.UpdateBannerDTO;
 import com.ljc.chaocommunity.pojo.result.Result;
 import com.ljc.chaocommunity.pojo.vo.AdminBannerVO;
@@ -28,7 +29,7 @@ public class AdminBannerController {
 
     @PostMapping
     @Operation(summary = "新增轮播图")
-    public Result<Void> create(@Valid @RequestBody UpdateBannerDTO dto) {
+    public Result<Void> create(@Valid @RequestBody CreateBannerDTO dto) {
         bannerService.create(dto);
         return Result.success();
     }

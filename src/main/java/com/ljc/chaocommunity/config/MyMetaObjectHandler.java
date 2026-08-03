@@ -58,4 +58,12 @@ public class MyMetaObjectHandler implements MetaObjectHandler {
 //TODO 以后可以查看关注的人的动态
 
 
+//TODO 以后可以新增评论区@ 被@的可以发送通知  新增拉黑功能 被别人拉黑不能评论别人的帖子 不能看别人拥有什么帖子 和 @别人（双方互相）
+
+
+//TODO 驳回审核以后给通知
+
+//TODO 丰富管理员举报功能 如删除用户帖子 封禁用户（伴随着删除用户资料头像）
+
+
 

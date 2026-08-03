@@ -20,8 +20,8 @@ public interface AnnouncementService {
     /** 公告详情（+浏览量） */
     AnnouncementVO getDetail(Long id);
 
-    /** 最新公告（置顶优先，再按时间） */
-    AnnouncementVO getLatest();
+    /** 最新公告（置顶优先，再按时间，limit 条） */
+    List<AnnouncementVO> getLatest(int limit);
 
     // ===== 管理端 =====
 

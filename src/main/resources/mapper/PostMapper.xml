@@ -3,8 +3,8 @@
         "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
 <mapper namespace="com.ljc.chaocommunity.mapper.PostMapper">
 
-    <!-- ===== 首页分页查询：分类 + 排序（new/hot/follow），精选优先 ===== -->
-    <select id="selectPageVo" resultType="com.ljc.chaocommunity.pojo.vo.PostVO">
+    <!-- ===== 首页：最新（按创建时间） ===== -->
+    <select id="selectPageVoNewest" resultType="com.ljc.chaocommunity.pojo.vo.PostVO">
         SELECT p.id, p.user_id, p.category_id, p.title, p.content,
                p.view_count, p.like_count, p.comment_count, p.cover_url, p.top, p.status, p.is_featured,
                p.create_time, p.update_time,
@@ -17,27 +17,57 @@
             <if test="categoryId != null">
                 AND p.category_id = #{categoryId}
             </if>
-            <if test="currentUserId != null">
-                AND p.user_id IN (
-                    SELECT followee_id FROM user_follow WHERE follower_id = #{currentUserId}
-                )
+            AND p.deleted = 0
+            AND p.status = 0
+        </where>
+        ORDER BY p.create_time DESC
+    </select>
+
+    <!-- ===== 首页：最热（按浏览量） ===== -->
+    <select id="selectPageVoHot" resultType="com.ljc.chaocommunity.pojo.vo.PostVO">
+        SELECT p.id, p.user_id, p.category_id, p.title, p.content,
+               p.view_count, p.like_count, p.comment_count, p.cover_url, p.top, p.status, p.is_featured,
+               p.create_time, p.update_time,
+               u.username, u.nickname, u.avatar,
+               c.name AS category_name
+        FROM post p
+        LEFT JOIN user u ON p.user_id = u.id
+        LEFT JOIN category c ON p.category_id = c.id
+        <where>
+            <if test="categoryId != null">
+                AND p.category_id = #{categoryId}
             </if>
             AND p.deleted = 0
             AND p.status = 0
         </where>
-        ORDER BY p.is_featured DESC
-        <choose>
-            <when test="sort == 'hot'">
-                , p.view_count DESC, p.create_time DESC
-            </when>
-            <otherwise>
-                , p.create_time DESC
-            </otherwise>
-        </choose>
+        ORDER BY p.view_count DESC, p.create_time DESC
     </select>
 
-    <!-- ===== 用户主页：按用户ID + 排序（new/hot），精选优先 ===== -->
-    <select id="selectPageVoByUserId" resultType="com.ljc.chaocommunity.pojo.vo.PostVO">
+    <!-- ===== 首页：关注（只查关注的用户） ===== -->
+    <select id="selectPageVoFollow" resultType="com.ljc.chaocommunity.pojo.vo.PostVO">
+        SELECT p.id, p.user_id, p.category_id, p.title, p.content,
+               p.view_count, p.like_count, p.comment_count, p.cover_url, p.top, p.status, p.is_featured,
+               p.create_time, p.update_time,
+               u.username, u.nickname, u.avatar,
+               c.name AS category_name
+        FROM post p
+        LEFT JOIN user u ON p.user_id = u.id
+        LEFT JOIN category c ON p.category_id = c.id
+        <where>
+            <if test="categoryId != null">
+                AND p.category_id = #{categoryId}
+            </if>
+            AND p.user_id IN (
+                SELECT followee_id FROM user_follow WHERE follower_id = #{currentUserId}
+            )
+            AND p.deleted = 0
+            AND p.status = 0
+        </where>
+        ORDER BY p.create_time DESC
+    </select>
+
+    <!-- ===== 用户主页：最新 ===== -->
+    <select id="selectPageVoByUserIdNewest" resultType="com.ljc.chaocommunity.pojo.vo.PostVO">
         SELECT p.id, p.user_id, p.category_id, p.title, p.content,
                p.view_count, p.like_count, p.comment_count, p.cover_url, p.top, p.status, p.is_featured,
                p.create_time, p.update_time,
@@ -51,19 +81,29 @@
           <if test="includeAllStatus == null or includeAllStatus == false">
               AND p.status = 0
           </if>
-        ORDER BY p.is_featured DESC
-        <choose>
-            <when test="sort == 'hot'">
-                , p.view_count DESC, p.create_time DESC
-            </when>
-            <otherwise>
-                , p.create_time DESC
-            </otherwise>
-        </choose>
+        ORDER BY p.create_time DESC
     </select>
 
-    <!-- ===== 管理端：分页查询所有帖子（包含隐藏），精选优先 ===== -->
-    <select id="selectPageVoAll" resultType="com.ljc.chaocommunity.pojo.vo.PostVO">
+    <!-- ===== 用户主页：最热 ===== -->
+    <select id="selectPageVoByUserIdHot" resultType="com.ljc.chaocommunity.pojo.vo.PostVO">
+        SELECT p.id, p.user_id, p.category_id, p.title, p.content,
+               p.view_count, p.like_count, p.comment_count, p.cover_url, p.top, p.status, p.is_featured,
+               p.create_time, p.update_time,
+               u.username, u.nickname, u.avatar,
+               c.name AS category_name
+        FROM post p
+        LEFT JOIN user u ON p.user_id = u.id
+        LEFT JOIN category c ON p.category_id = c.id
+        WHERE p.user_id = #{userId}
+          AND p.deleted = 0
+          <if test="includeAllStatus == null or includeAllStatus == false">
+              AND p.status = 0
+          </if>
+        ORDER BY p.view_count DESC, p.create_time DESC
+    </select>
+
+    <!-- ===== 管理端：最新 ===== -->
+    <select id="selectPageVoAllNewest" resultType="com.ljc.chaocommunity.pojo.vo.PostVO">
         SELECT p.id, p.user_id, p.category_id, p.title, p.content,
                p.view_count, p.like_count, p.comment_count, p.cover_url, p.top, p.status, p.is_featured,
                p.create_time, p.update_time,
@@ -78,19 +118,30 @@
             </if>
             AND p.deleted = 0
         </where>
-        ORDER BY p.is_featured DESC
-        <choose>
-            <when test="sort == 'hot'">
-                , p.view_count DESC, p.create_time DESC
-            </when>
-            <otherwise>
-                , p.create_time DESC
-            </otherwise>
-        </choose>
+        ORDER BY p.create_time DESC
     </select>
 
-    <!-- ===== 精选帖子列表 ===== -->
-    <select id="selectPageVoFeatured" resultType="com.ljc.chaocommunity.pojo.vo.PostVO">
+    <!-- ===== 管理端：最热 ===== -->
+    <select id="selectPageVoAllHot" resultType="com.ljc.chaocommunity.pojo.vo.PostVO">
+        SELECT p.id, p.user_id, p.category_id, p.title, p.content,
+               p.view_count, p.like_count, p.comment_count, p.cover_url, p.top, p.status, p.is_featured,
+               p.create_time, p.update_time,
+               u.username, u.nickname, u.avatar,
+               c.name AS category_name
+        FROM post p
+        LEFT JOIN user u ON p.user_id = u.id
+        LEFT JOIN category c ON p.category_id = c.id
+        <where>
+            <if test="categoryId != null">
+                AND p.category_id = #{categoryId}
+            </if>
+            AND p.deleted = 0
+        </where>
+        ORDER BY p.view_count DESC, p.create_time DESC
+    </select>
+
+    <!-- ===== 精选帖子：最新 ===== -->
+    <select id="selectPageVoFeaturedNewest" resultType="com.ljc.chaocommunity.pojo.vo.PostVO">
         SELECT p.id, p.user_id, p.category_id, p.title, p.content,
                p.view_count, p.like_count, p.comment_count, p.cover_url, p.top, p.status, p.is_featured,
                p.create_time, p.update_time,
@@ -103,6 +154,22 @@
           AND p.deleted = 0
           AND p.status = 0
         ORDER BY p.create_time DESC
+    </select>
+
+    <!-- ===== 精选帖子：最热 ===== -->
+    <select id="selectPageVoFeaturedHot" resultType="com.ljc.chaocommunity.pojo.vo.PostVO">
+        SELECT p.id, p.user_id, p.category_id, p.title, p.content,
+               p.view_count, p.like_count, p.comment_count, p.cover_url, p.top, p.status, p.is_featured,
+               p.create_time, p.update_time,
+               u.username, u.nickname, u.avatar,
+               c.name AS category_name
+        FROM post p
+        LEFT JOIN user u ON p.user_id = u.id
+        LEFT JOIN category c ON p.category_id = c.id
+        WHERE p.is_featured = 1
+          AND p.deleted = 0
+          AND p.status = 0
+        ORDER BY p.view_count DESC, p.create_time DESC
     </select>
 
 </mapper>

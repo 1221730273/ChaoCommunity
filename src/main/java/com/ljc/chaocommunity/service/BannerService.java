@@ -1,5 +1,6 @@
 package com.ljc.chaocommunity.service;
 
+import com.ljc.chaocommunity.pojo.dto.CreateBannerDTO;
 import com.ljc.chaocommunity.pojo.dto.UpdateBannerDTO;
 import com.ljc.chaocommunity.pojo.vo.AdminBannerVO;
 import com.ljc.chaocommunity.pojo.vo.BannerVO;
@@ -15,7 +16,7 @@ public interface BannerService {
     List<AdminBannerVO> getAdminBanners();
 
     /** 新增轮播图 */
-    void create(UpdateBannerDTO dto);
+    void create(CreateBannerDTO dto);
 
     /** 更新轮播图 */
     void update(UpdateBannerDTO dto);

@@ -4,6 +4,7 @@ import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.ljc.chaocommunity.exception.BusinessException;
 import com.ljc.chaocommunity.mapper.BannerMapper;
 import com.ljc.chaocommunity.mapper.FileRecordMapper;
+import com.ljc.chaocommunity.pojo.dto.CreateBannerDTO;
 import com.ljc.chaocommunity.pojo.dto.UpdateBannerDTO;
 import com.ljc.chaocommunity.pojo.entity.Banner;
 import com.ljc.chaocommunity.pojo.entity.FileRecord;
@@ -63,7 +64,7 @@ public class BannerServiceImpl implements BannerService {
 
     @Override
     @Transactional
-    public void create(UpdateBannerDTO dto) {
+    public void create(CreateBannerDTO dto) {
         Long currentUserId = SecurityUtils.getCurrentUserId();
 
         // 1. 校验文件

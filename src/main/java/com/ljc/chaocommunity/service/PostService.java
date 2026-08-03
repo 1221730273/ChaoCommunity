@@ -51,7 +51,13 @@ public interface PostService {
     void toggleFeatured(Long postId);
 
     /** 分页查询精选帖子 */
-    PageResult<PostVO> pageQueryFeatured(int page, int size);
+    PageResult<PostVO> pageQueryFeatured(int page, int size, String sort);
+
+    /** 查询最新帖子（首页展示，默认取最新 limit 条） */
+    List<PostVO> getLatestPosts(int limit);
+
+    /** 查询最新精选帖子（首页展示，默认 2 条） */
+    List<PostVO> getLatestFeatured(int limit);
 
     /** 浏览量+1 */
     void incrementViewCount(Long postId);

@@ -97,8 +97,27 @@ public class PostController {
     @GetMapping("/featured")
     @Operation(summary = "查询精选帖子")
     public Result<PageResult<PostVO>> getFeaturedPosts(@RequestParam(defaultValue = "1") int page,
-                                                        @RequestParam(defaultValue = "10") int size) {
-        return Result.success(postService.pageQueryFeatured(page, size));
+                                                        @RequestParam(defaultValue = "10") int size,
+                                                        @RequestParam(defaultValue = "newest") String sort) {
+        return Result.success(postService.pageQueryFeatured(page, size, sort));
+    }
+
+    /**
+     * 查询最新帖子（首页展示，默认 4 条）
+     */
+    @GetMapping("/latest")
+    @Operation(summary = "查询最新帖子")
+    public Result<List<PostVO>> getLatestPosts(@RequestParam(defaultValue = "4") int limit) {
+        return Result.success(postService.getLatestPosts(limit));
+    }
+
+    /**
+     * 查询最新精选帖子（首页展示，默认 2 条）
+     */
+    @GetMapping("/featured/latest")
+    @Operation(summary = "查询最新精选帖子")
+    public Result<List<PostVO>> getLatestFeatured(@RequestParam(defaultValue = "2") int limit) {
+        return Result.success(postService.getLatestFeatured(limit));
     }
 
     /**

@@ -36,6 +36,9 @@ public class UserApplyVO {
     @Schema(description = "头像文件ID")
     private Long avatarFileId;
 
+    @Schema(description = "新头像URL（从 file_record 查出）")
+    private String avatarUrl;
+
     @Schema(description = "当前签名")
     private String currentSignature;
 

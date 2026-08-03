@@ -90,8 +90,8 @@ public class OssUtil {
             throw new RuntimeException("文件上传失败", e);
         }
 
-        // 3. 拼接访问 URL
-        String url = endpoint + "/" + objectKey;
+        // 3. 拼接访问 URL（虚拟主机风格：https://{bucket}.{endpoint-host}/{objectKey}）
+        String url = buildUrl(objectKey);
         return new UploadResult(objectKey, url);
     }
 
@@ -99,6 +99,16 @@ public class OssUtil {
      * 上传结果
      */
     public record UploadResult(String objectKey, String url) {}
+
+    /**
+     * 拼接 OSS 公开访问 URL
+     */
+    private String buildUrl(String objectKey) {
+        // endpoint 如 https://oss-cn-beijing.aliyuncs.com
+        // 转为 https://{bucketName}.oss-cn-beijing.aliyuncs.com/{objectKey}
+        String host = endpoint.substring(endpoint.indexOf("://") + 3);
+        return "https://" + bucketName + "." + host + "/" + objectKey;
+    }
 
     /**
      * 移动文件到另一个位置（同 bucket 内复制后删除源文件）
@@ -124,7 +134,7 @@ public class OssUtil {
                 .build();
         client.deleteObject(deleteRequest);
 
-        String url = endpoint + "/" + targetKey;
+        String url = buildUrl(targetKey);
         return new UploadResult(targetKey, url);
     }
 

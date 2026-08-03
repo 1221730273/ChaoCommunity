@@ -18,8 +18,11 @@ public class Tag {
     /** 标签名称 */
     private String name;
 
-    /** 标签图标 */
+    /** 标签图标URL */
     private String icon;
+
+    /** 图标文件记录ID */
+    private Long fileId;
 
     @TableField(fill = FieldFill.INSERT)
     private LocalDateTime createTime;

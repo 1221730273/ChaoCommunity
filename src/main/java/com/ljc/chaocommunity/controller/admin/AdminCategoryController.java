@@ -8,6 +8,8 @@ import io.swagger.v3.oas.annotations.tags.Tag;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.web.bind.annotation.*;
 
+import java.util.List;
+
 @RestController
 @RequestMapping("/admin/category")
 @Tag(name = "分类管理（管理端）")
@@ -15,6 +17,12 @@ public class AdminCategoryController {
 
     @Autowired
     private CategoryService categoryService;
+
+    @GetMapping("/list")
+    @Operation(summary = "查询所有分类")
+    public Result<List<Category>> list() {
+        return Result.success(categoryService.listAll());
+    }
 
     @PostMapping
     @Operation(summary = "新增分类")

@@ -245,6 +245,14 @@ public class UserServiceImpl implements UserService {
             vo.setCurrentAvatar(user.getAvatar());
             vo.setCurrentSignature(user.getSignature());
 
+            // 如果是头像审核，查出新头像的 URL
+            if (apply.getAvatarFileId() != null) {
+                FileRecord fileRecord = fileRecordMapper.selectById(apply.getAvatarFileId());
+                if (fileRecord != null) {
+                    vo.setAvatarUrl(fileRecord.getUrl());
+                }
+            }
+
             voList.add(vo);
         }
         return voList;

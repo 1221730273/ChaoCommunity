@@ -18,6 +18,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.stream.Collectors;
 
 @Service
 public class AnnouncementServiceImpl implements AnnouncementService {
@@ -76,24 +77,23 @@ public class AnnouncementServiceImpl implements AnnouncementService {
     }
 
     @Override
-    public AnnouncementVO getLatest() {
+    public List<AnnouncementVO> getLatest(int limit) {
         LambdaQueryWrapper<Announcement> wrapper = new LambdaQueryWrapper<>();
         wrapper.eq(Announcement::getStatus, 0)
                 .orderByDesc(Announcement::getIsTop)
                 .orderByDesc(Announcement::getCreateTime)
-                .last("LIMIT 1");
-        Announcement a = announcementMapper.selectOne(wrapper);
-        if (a == null) {
-            return null;
-        }
-        AnnouncementVO vo = new AnnouncementVO();
-        vo.setId(a.getId());
-        vo.setTitle(a.getTitle());
-        vo.setType(a.getType());
-        vo.setIsTop(a.getIsTop());
-        vo.setViewCount(a.getViewCount());
-        vo.setCreateTime(a.getCreateTime());
-        return vo;
+                .last("LIMIT " + limit);
+        List<Announcement> list = announcementMapper.selectList(wrapper);
+        return list.stream().map(a -> {
+            AnnouncementVO vo = new AnnouncementVO();
+            vo.setId(a.getId());
+            vo.setTitle(a.getTitle());
+            vo.setType(a.getType());
+            vo.setIsTop(a.getIsTop());
+            vo.setViewCount(a.getViewCount());
+            vo.setCreateTime(a.getCreateTime());
+            return vo;
+        }).collect(Collectors.toList());
     }
 
     // ==================== 管理端 ====================
