@@ -196,7 +196,7 @@ public class PostServiceImpl implements PostService {
         }
 
         // 4. 检查是否有同帖子的待审核记录
-        checkDuplicateAudit(post.getId());
+        checkDuplicateAudit(post.getId(), "UPDATE");
 
         // 5. 校验封面文件（如果传了新的且不同于旧封面）
         Long oldCoverFileId = getOldCoverFileId(post.getId());
@@ -277,7 +277,7 @@ public class PostServiceImpl implements PostService {
         }
 
         // 2. 检查是否有同帖子的待审核记录
-        checkDuplicateAudit(postId);
+        checkDuplicateAudit(postId, "COVER");
 
         // 3. 查询旧封面 file_id
         Long oldCoverFileId = getOldCoverFileId(postId);
@@ -464,6 +464,7 @@ public class PostServiceImpl implements PostService {
         LambdaQueryWrapper<Post> wrapper = new LambdaQueryWrapper<>();
         wrapper.eq(Post::getStatus, 0)
                 .eq(Post::getDeleted, 0)
+                .orderByDesc(Post::getTop)
                 .orderByDesc(Post::getCreateTime)
                 .last("LIMIT " + limit);
         List<Post> posts = postMapper.selectList(wrapper);
@@ -475,13 +476,14 @@ public class PostServiceImpl implements PostService {
     }
 
     /**
-     * 首页最新精选帖子：is_featured=1 + status=0，按创建时间倒序取 limit 条
+     * 首页最新精选帖子：is_featured=1 + status=0，按置顶优先 + 创建时间倒序取 limit 条
      */
     @Override
     public List<PostVO> getLatestFeatured(int limit) {
         LambdaQueryWrapper<Post> wrapper = new LambdaQueryWrapper<>();
         wrapper.eq(Post::getIsFeatured, 1)
                 .eq(Post::getStatus, 0)
+                .orderByDesc(Post::getTop)
                 .orderByDesc(Post::getCreateTime)
                 .last("LIMIT " + limit);
         List<Post> posts = postMapper.selectList(wrapper);
@@ -553,6 +555,7 @@ public class PostServiceImpl implements PostService {
             PostAuditVO vo = new PostAuditVO();
             vo.setId(audit.getId());
             vo.setUserId(audit.getUserId());
+            vo.setType(audit.getType());
             vo.setPostId(audit.getPostId());
             vo.setTitle(audit.getTitle());
             vo.setContent(audit.getContent());
@@ -672,12 +675,14 @@ public class PostServiceImpl implements PostService {
     /**
      * 检查同帖子是否已有待审核记录
      */
-    private void checkDuplicateAudit(Long postId) {
+    private void checkDuplicateAudit(Long postId, String type) {
         LambdaQueryWrapper<PostAudit> wrapper = new LambdaQueryWrapper<>();
         wrapper.eq(PostAudit::getPostId, postId)
+                .eq(PostAudit::getType, type)
                 .eq(PostAudit::getStatus, 0);
         if (postAuditMapper.selectCount(wrapper) > 0) {
-            throw new BusinessException("该帖子已有修改在审核中，请等待审核完成");
+            String typeLabel = "COVER".equals(type) ? "封面" : "内容";
+            throw new BusinessException("该帖子已有" + typeLabel + "修改在审核中，请等待审核完成");
         }
     }
 

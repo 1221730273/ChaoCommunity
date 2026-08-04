@@ -58,6 +58,7 @@ public class PostAuditServiceImpl implements PostAuditService {
             PostAuditVO vo = new PostAuditVO();
             vo.setId(audit.getId());
             vo.setUserId(audit.getUserId());
+            vo.setType(audit.getType());
             vo.setPostId(audit.getPostId());
             vo.setTitle(audit.getTitle());
             vo.setContent(audit.getContent());
@@ -101,6 +102,13 @@ public class PostAuditServiceImpl implements PostAuditService {
                     .map(PostAuditFile::getFileId)
                     .collect(Collectors.toList());
             vo.setContentFileIds(contentFileIds);
+            // 正文图片URL列表（空列表跳过，避免 selectBatchIds 生成 IN () 语法错误）
+            if (!contentFileIds.isEmpty()) {
+                List<String> contentFileUrls = fileRecordMapper.selectBatchIds(contentFileIds).stream()
+                        .map(FileRecord::getUrl)
+                        .collect(Collectors.toList());
+                vo.setContentFileUrls(contentFileUrls);
+            }
 
             voList.add(vo);
         }
@@ -232,6 +240,7 @@ public class PostAuditServiceImpl implements PostAuditService {
             PostAuditVO vo = new PostAuditVO();
             vo.setId(audit.getId());
             vo.setUserId(audit.getUserId());
+            vo.setType(audit.getType());
             vo.setPostId(audit.getPostId());
             vo.setTitle(audit.getTitle());
             vo.setContent(audit.getContent());
@@ -271,6 +280,13 @@ public class PostAuditServiceImpl implements PostAuditService {
                     .map(PostAuditFile::getFileId)
                     .collect(Collectors.toList());
             vo.setContentFileIds(contentFileIds);
+            // 正文图片URL列表（空列表跳过，避免 selectBatchIds 生成 IN () 语法错误）
+            if (!contentFileIds.isEmpty()) {
+                List<String> contentFileUrls = fileRecordMapper.selectBatchIds(contentFileIds).stream()
+                        .map(FileRecord::getUrl)
+                        .collect(Collectors.toList());
+                vo.setContentFileUrls(contentFileUrls);
+            }
 
             voList.add(vo);
         }

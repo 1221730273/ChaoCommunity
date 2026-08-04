@@ -25,6 +25,9 @@ public class PostAuditVO {
     @Schema(description = "用户昵称")
     private String nickname;
 
+    @Schema(description = "审核类型 CREATE/UPDATE/COVER")
+    private String type;
+
     @Schema(description = "原帖子ID（null=新帖）")
     private Long postId;
 
@@ -51,6 +54,9 @@ public class PostAuditVO {
 
     @Schema(description = "正文图片文件ID列表")
     private List<Long> contentFileIds;
+
+    @Schema(description = "正文图片URL列表")
+    private List<String> contentFileUrls;
 
     @Schema(description = "状态 0待审核 1通过 2拒绝")
     private Integer status;

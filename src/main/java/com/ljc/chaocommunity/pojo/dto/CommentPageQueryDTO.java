@@ -16,6 +16,6 @@ public class CommentPageQueryDTO {
     @Schema(description = "每页条数", example = "10")
     private Integer size = 10;
 
-    @Schema(description = "排序方式：newest=最新(默认)  hot=最热(按点赞量)")
-    private String sort = "newest";
+    @Schema(description = "排序方式：hot=最热(默认，按点赞量)  newest=最新")
+    private String sort = "hot";
 }

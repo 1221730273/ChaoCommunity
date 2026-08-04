@@ -104,6 +104,9 @@ public class SecurityConfig {
                         .requestMatchers(HttpMethod.GET, "/follow/*/following").permitAll()
                         .requestMatchers(HttpMethod.GET, "/follow/*/followers").permitAll()
 
+                        // 评论浏览
+                        .requestMatchers(HttpMethod.GET, "/comment/list").permitAll()
+
                         // 分类
                         .requestMatchers(HttpMethod.GET, "/category/**").permitAll()
 

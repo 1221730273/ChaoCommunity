@@ -13,14 +13,12 @@
         FROM post p
         LEFT JOIN user u ON p.user_id = u.id
         LEFT JOIN category c ON p.category_id = c.id
-        <where>
-            <if test="categoryId != null">
-                AND p.category_id = #{categoryId}
-            </if>
-            AND p.deleted = 0
-            AND p.status = 0
-        </where>
-        ORDER BY p.create_time DESC
+        WHERE p.deleted = 0
+          AND p.status = 0
+        <if test="categoryId != null">
+          AND p.category_id = #{categoryId}
+        </if>
+        ORDER BY p.top DESC, p.create_time DESC
     </select>
 
     <!-- ===== 首页：最热（按浏览量） ===== -->
@@ -33,14 +31,12 @@
         FROM post p
         LEFT JOIN user u ON p.user_id = u.id
         LEFT JOIN category c ON p.category_id = c.id
-        <where>
-            <if test="categoryId != null">
-                AND p.category_id = #{categoryId}
-            </if>
-            AND p.deleted = 0
-            AND p.status = 0
-        </where>
-        ORDER BY p.view_count DESC, p.create_time DESC
+        WHERE p.deleted = 0
+          AND p.status = 0
+        <if test="categoryId != null">
+          AND p.category_id = #{categoryId}
+        </if>
+        ORDER BY p.top DESC, p.view_count DESC, p.create_time DESC
     </select>
 
     <!-- ===== 首页：关注（只查关注的用户） ===== -->
@@ -53,17 +49,15 @@
         FROM post p
         LEFT JOIN user u ON p.user_id = u.id
         LEFT JOIN category c ON p.category_id = c.id
-        <where>
-            <if test="categoryId != null">
-                AND p.category_id = #{categoryId}
-            </if>
-            AND p.user_id IN (
-                SELECT followee_id FROM user_follow WHERE follower_id = #{currentUserId}
-            )
-            AND p.deleted = 0
-            AND p.status = 0
-        </where>
-        ORDER BY p.create_time DESC
+        WHERE p.deleted = 0
+          AND p.status = 0
+          AND p.user_id IN (
+              SELECT followee_id FROM user_follow WHERE follower_id = #{currentUserId}
+          )
+        <if test="categoryId != null">
+          AND p.category_id = #{categoryId}
+        </if>
+        ORDER BY p.top DESC, p.create_time DESC
     </select>
 
     <!-- ===== 用户主页：最新 ===== -->
@@ -78,10 +72,10 @@
         LEFT JOIN category c ON p.category_id = c.id
         WHERE p.user_id = #{userId}
           AND p.deleted = 0
-          <if test="includeAllStatus == null or includeAllStatus == false">
-              AND p.status = 0
-          </if>
-        ORDER BY p.create_time DESC
+        <if test="includeAllStatus == null or includeAllStatus == false">
+          AND p.status = 0
+        </if>
+        ORDER BY p.top DESC, p.create_time DESC
     </select>
 
     <!-- ===== 用户主页：最热 ===== -->
@@ -96,10 +90,10 @@
         LEFT JOIN category c ON p.category_id = c.id
         WHERE p.user_id = #{userId}
           AND p.deleted = 0
-          <if test="includeAllStatus == null or includeAllStatus == false">
-              AND p.status = 0
-          </if>
-        ORDER BY p.view_count DESC, p.create_time DESC
+        <if test="includeAllStatus == null or includeAllStatus == false">
+          AND p.status = 0
+        </if>
+        ORDER BY p.top DESC, p.view_count DESC, p.create_time DESC
     </select>
 
     <!-- ===== 管理端：最新 ===== -->
@@ -112,13 +106,11 @@
         FROM post p
         LEFT JOIN user u ON p.user_id = u.id
         LEFT JOIN category c ON p.category_id = c.id
-        <where>
-            <if test="categoryId != null">
-                AND p.category_id = #{categoryId}
-            </if>
-            AND p.deleted = 0
-        </where>
-        ORDER BY p.create_time DESC
+        WHERE p.deleted = 0
+        <if test="categoryId != null">
+          AND p.category_id = #{categoryId}
+        </if>
+        ORDER BY p.top DESC, p.create_time DESC
     </select>
 
     <!-- ===== 管理端：最热 ===== -->
@@ -131,13 +123,11 @@
         FROM post p
         LEFT JOIN user u ON p.user_id = u.id
         LEFT JOIN category c ON p.category_id = c.id
-        <where>
-            <if test="categoryId != null">
-                AND p.category_id = #{categoryId}
-            </if>
-            AND p.deleted = 0
-        </where>
-        ORDER BY p.view_count DESC, p.create_time DESC
+        WHERE p.deleted = 0
+        <if test="categoryId != null">
+          AND p.category_id = #{categoryId}
+        </if>
+        ORDER BY p.top DESC, p.view_count DESC, p.create_time DESC
     </select>
 
     <!-- ===== 精选帖子：最新 ===== -->
@@ -153,7 +143,7 @@
         WHERE p.is_featured = 1
           AND p.deleted = 0
           AND p.status = 0
-        ORDER BY p.create_time DESC
+        ORDER BY p.top DESC, p.create_time DESC
     </select>
 
     <!-- ===== 精选帖子：最热 ===== -->
@@ -169,7 +159,7 @@
         WHERE p.is_featured = 1
           AND p.deleted = 0
           AND p.status = 0
-        ORDER BY p.view_count DESC, p.create_time DESC
+        ORDER BY p.top DESC, p.view_count DESC, p.create_time DESC
     </select>
 
 </mapper>

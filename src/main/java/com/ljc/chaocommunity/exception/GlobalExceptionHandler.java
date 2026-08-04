@@ -26,7 +26,7 @@ public class GlobalExceptionHandler {
     @ExceptionHandler(MaxUploadSizeExceededException.class)
     public Result<?> handleMaxUploadSize(MaxUploadSizeExceededException e) {
         log.warn("上传文件过大: {}", e.getMessage());
-        return Result.error("上传文件过大，单个文件最大 10MB");
+        return Result.error("上传文件过大，单个文件最大 1MB");
     }
 
     /**
