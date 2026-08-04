@@ -58,4 +58,31 @@
         ORDER BY c.create_time DESC
     </select>
 
+    <!-- 根据ID查询单条评论VO -->
+    <select id="selectVoById" resultType="com.ljc.chaocommunity.pojo.vo.CommentVO">
+        SELECT c.id, c.post_id, c.user_id, c.parent_id, c.content, c.like_count,
+               c.create_time, c.update_time,
+               u.username, u.nickname, u.avatar,
+               p.title AS post_title
+        FROM post_comment c
+        LEFT JOIN user u ON c.user_id = u.id
+        LEFT JOIN post p ON c.post_id = p.id
+        WHERE c.id = #{id}
+          AND c.deleted = 0
+    </select>
+
+    <!-- 查询某父评论下的所有子回复（按时间升序） -->
+    <select id="selectVoByParentId" resultType="com.ljc.chaocommunity.pojo.vo.CommentVO">
+        SELECT c.id, c.post_id, c.user_id, c.parent_id, c.content, c.like_count,
+               c.create_time, c.update_time,
+               u.username, u.nickname, u.avatar,
+               p.title AS post_title
+        FROM post_comment c
+        LEFT JOIN user u ON c.user_id = u.id
+        LEFT JOIN post p ON c.post_id = p.id
+        WHERE c.parent_id = #{parentId}
+          AND c.deleted = 0
+        ORDER BY c.create_time ASC
+    </select>
+
 </mapper>

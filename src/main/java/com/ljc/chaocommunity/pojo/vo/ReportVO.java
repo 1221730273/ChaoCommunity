@@ -27,6 +27,9 @@ public class ReportVO {
     @Schema(description = "举报类型")
     private String targetType;
 
+    @Schema(description = "关联帖子ID（举报评论时查询得到）")
+    private Long postId;
+
     @Schema(description = "举报原因")
     private String reason;
 

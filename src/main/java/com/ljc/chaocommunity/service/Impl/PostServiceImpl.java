@@ -52,6 +52,9 @@ public class PostServiceImpl implements PostService {
     @Autowired
     private UserMapper userMapper;
 
+    @Autowired
+    private CommentMapper commentMapper;
+
 
     /**
      * 创建帖子 → 提交审核（不直接插入 post 表）
@@ -157,6 +160,11 @@ public class PostServiceImpl implements PostService {
                 fileRecordMapper.updateById(fileRecord);
             }
         }
+
+        // 级联软删除帖子下的所有评论
+        LambdaQueryWrapper<Comment> commentWrapper = new LambdaQueryWrapper<>();
+        commentWrapper.eq(Comment::getPostId, postId);
+        commentMapper.delete(commentWrapper);
 
         postMapper.deleteById(postId);
     }
@@ -460,11 +468,10 @@ public class PostServiceImpl implements PostService {
      */
     @Override
     public List<PostVO> getLatestPosts(int limit) {
-        // 直接查 post 表：status=0, deleted=0, 按 create_time 倒序, LIMIT
+        // 直接查 post 表：status=0, deleted=0, 按 create_time 倒序（忽略置顶）, LIMIT
         LambdaQueryWrapper<Post> wrapper = new LambdaQueryWrapper<>();
         wrapper.eq(Post::getStatus, 0)
                 .eq(Post::getDeleted, 0)
-                .orderByDesc(Post::getTop)
                 .orderByDesc(Post::getCreateTime)
                 .last("LIMIT " + limit);
         List<Post> posts = postMapper.selectList(wrapper);
@@ -483,7 +490,6 @@ public class PostServiceImpl implements PostService {
         LambdaQueryWrapper<Post> wrapper = new LambdaQueryWrapper<>();
         wrapper.eq(Post::getIsFeatured, 1)
                 .eq(Post::getStatus, 0)
-                .orderByDesc(Post::getTop)
                 .orderByDesc(Post::getCreateTime)
                 .last("LIMIT " + limit);
         List<Post> posts = postMapper.selectList(wrapper);
@@ -638,6 +644,11 @@ public class PostServiceImpl implements PostService {
                 fileRecordMapper.updateById(fr);
             }
         }
+
+        // 级联软删除帖子下的所有评论
+        LambdaQueryWrapper<Comment> commentWrapper = new LambdaQueryWrapper<>();
+        commentWrapper.eq(Comment::getPostId, postId);
+        commentMapper.delete(commentWrapper);
 
         postMapper.deleteById(postId);
     }

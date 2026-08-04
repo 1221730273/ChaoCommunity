@@ -1,6 +1,7 @@
 package com.ljc.chaocommunity.service.Impl;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.ljc.chaocommunity.exception.BusinessException;
 import com.ljc.chaocommunity.mapper.CommentMapper;
 import com.ljc.chaocommunity.mapper.PostMapper;
@@ -8,8 +9,10 @@ import com.ljc.chaocommunity.mapper.ReportMapper;
 import com.ljc.chaocommunity.mapper.UserMapper;
 import com.ljc.chaocommunity.pojo.dto.HandleReportDTO;
 import com.ljc.chaocommunity.pojo.dto.ReportDTO;
+import com.ljc.chaocommunity.pojo.entity.Comment;
 import com.ljc.chaocommunity.pojo.entity.Report;
 import com.ljc.chaocommunity.pojo.entity.User;
+import com.ljc.chaocommunity.pojo.result.PageResult;
 import com.ljc.chaocommunity.pojo.vo.ReportVO;
 import com.ljc.chaocommunity.service.ReportService;
 import com.ljc.chaocommunity.util.SecurityUtils;
@@ -19,6 +22,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.stream.Collectors;
 
 @Service
 public class ReportServiceImpl implements ReportService {
@@ -82,36 +86,20 @@ public class ReportServiceImpl implements ReportService {
     }
 
     @Override
-    public List<ReportVO> getReportList(Integer status) {
+    public PageResult<ReportVO> getReportList(Integer status, int page, int size) {
         LambdaQueryWrapper<Report> wrapper = new LambdaQueryWrapper<>();
         if (status != null) {
             wrapper.eq(Report::getStatus, status);
         }
         wrapper.orderByDesc(Report::getCreateTime);
-        List<Report> reports = reportMapper.selectList(wrapper);
 
-        List<ReportVO> voList = new ArrayList<>();
-        for (Report report : reports) {
-            ReportVO vo = new ReportVO();
-            vo.setId(report.getId());
-            vo.setUserId(report.getUserId());
-            vo.setTargetId(report.getTargetId());
-            vo.setTargetType(report.getTargetType());
-            vo.setReason(report.getReason());
-            vo.setStatus(report.getStatus());
-            vo.setHandlerId(report.getHandlerId());
-            vo.setHandleRemark(report.getHandleRemark());
-            vo.setCreateTime(report.getCreateTime());
+        Page<Report> p = new Page<>(page, size);
+        Page<Report> resultPage = reportMapper.selectPage(p, wrapper);
 
-            // 查询举报人用户名
-            User user = userMapper.selectById(report.getUserId());
-            if (user != null) {
-                vo.setUsername(user.getUsername());
-            }
-
-            voList.add(vo);
-        }
-        return voList;
+        List<ReportVO> voList = resultPage.getRecords().stream()
+                .map(this::toReportVO)
+                .collect(Collectors.toList());
+        return new PageResult<>(resultPage.getTotal(), voList);
     }
 
     @Override
@@ -133,5 +121,44 @@ public class ReportServiceImpl implements ReportService {
         report.setHandlerId(handlerId);
         report.setHandleRemark(dto.getHandleRemark());
         reportMapper.updateById(report);
+    }
+
+    @Override
+    @Transactional
+    public void deleteReport(Long id) {
+        Report report = reportMapper.selectById(id);
+        if (report == null) {
+            throw new BusinessException("举报不存在");
+        }
+        reportMapper.deleteById(id);
+    }
+
+    /** Report → ReportVO 转换 */
+    private ReportVO toReportVO(Report report) {
+        ReportVO vo = new ReportVO();
+        vo.setId(report.getId());
+        vo.setUserId(report.getUserId());
+        vo.setTargetId(report.getTargetId());
+        vo.setTargetType(report.getTargetType());
+        vo.setReason(report.getReason());
+        vo.setStatus(report.getStatus());
+        vo.setHandlerId(report.getHandlerId());
+        vo.setHandleRemark(report.getHandleRemark());
+        vo.setCreateTime(report.getCreateTime());
+
+        User user = userMapper.selectById(report.getUserId());
+        if (user != null) {
+            vo.setUsername(user.getUsername());
+        }
+
+        // 举报对象是评论时，查出所属帖子ID
+        if ("COMMENT".equals(report.getTargetType())) {
+            Comment comment = commentMapper.selectById(report.getTargetId());
+            if (comment != null) {
+                vo.setPostId(comment.getPostId());
+            }
+        }
+
+        return vo;
     }
 }

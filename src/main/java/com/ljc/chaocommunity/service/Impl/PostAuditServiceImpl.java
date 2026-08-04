@@ -1,9 +1,11 @@
 package com.ljc.chaocommunity.service.Impl;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.ljc.chaocommunity.exception.BusinessException;
 import com.ljc.chaocommunity.mapper.*;
 import com.ljc.chaocommunity.pojo.entity.*;
+import com.ljc.chaocommunity.pojo.result.PageResult;
 import com.ljc.chaocommunity.pojo.vo.PostAuditVO;
 import com.ljc.chaocommunity.service.PostAuditService;
 import com.ljc.chaocommunity.util.OssUtil;
@@ -45,74 +47,105 @@ public class PostAuditServiceImpl implements PostAuditService {
     // ==================== 管理端：审核列表 ====================
 
     @Override
-    public List<PostAuditVO> getAuditList(Integer status) {
+    public PageResult<PostAuditVO> getAuditList(Integer status, int page, int size) {
         LambdaQueryWrapper<PostAudit> wrapper = new LambdaQueryWrapper<>();
         if (status != null) {
             wrapper.eq(PostAudit::getStatus, status);
         }
         wrapper.orderByDesc(PostAudit::getCreateTime);
-        List<PostAudit> audits = postAuditMapper.selectList(wrapper);
 
-        List<PostAuditVO> voList = new ArrayList<>();
-        for (PostAudit audit : audits) {
-            PostAuditVO vo = new PostAuditVO();
-            vo.setId(audit.getId());
-            vo.setUserId(audit.getUserId());
-            vo.setType(audit.getType());
-            vo.setPostId(audit.getPostId());
-            vo.setTitle(audit.getTitle());
-            vo.setContent(audit.getContent());
-            vo.setCategoryId(audit.getCategoryId());
-            vo.setCoverFileId(audit.getCoverFileId());
-            vo.setTagIds(audit.getTagIds());
-            vo.setStatus(audit.getStatus());
-            vo.setRejectReason(audit.getRejectReason());
-            vo.setHandlerId(audit.getHandlerId());
-            vo.setCreateTime(audit.getCreateTime());
+        Page<PostAudit> p = new Page<>(page, size);
+        Page<PostAudit> resultPage = postAuditMapper.selectPage(p, wrapper);
 
-            // 用户信息
-            User user = userMapper.selectById(audit.getUserId());
-            if (user != null) {
-                vo.setUsername(user.getUsername());
-                vo.setNickname(user.getNickname());
-            }
+        List<PostAuditVO> voList = resultPage.getRecords().stream()
+                .map(this::toAuditVO)
+                .collect(Collectors.toList());
+        return new PageResult<>(resultPage.getTotal(), voList);
+    }
 
-            // 分类名称
-            if (audit.getCategoryId() != null) {
-                Category category = categoryMapper.selectById(audit.getCategoryId());
-                if (category != null) {
-                    vo.setCategoryName(category.getName());
-                }
-            }
+    // ==================== 管理端：删除审核 ====================
 
-            // 封面URL
-            if (audit.getCoverFileId() != null) {
-                FileRecord coverFile = fileRecordMapper.selectById(audit.getCoverFileId());
-                if (coverFile != null) {
-                    vo.setCoverUrl(coverFile.getUrl());
-                }
-            }
-
-            // 正文图片fileId列表
-            LambdaQueryWrapper<PostAuditFile> fileWrapper = new LambdaQueryWrapper<>();
-            fileWrapper.eq(PostAuditFile::getAuditId, audit.getId())
-                    .eq(PostAuditFile::getType, "CONTENT");
-            List<PostAuditFile> auditFiles = postAuditFileMapper.selectList(fileWrapper);
-            List<Long> contentFileIds = auditFiles.stream()
-                    .map(PostAuditFile::getFileId)
-                    .collect(Collectors.toList());
-            vo.setContentFileIds(contentFileIds);
-            // 正文图片URL列表（空列表跳过，避免 selectBatchIds 生成 IN () 语法错误）
-            if (!contentFileIds.isEmpty()) {
-                List<String> contentFileUrls = fileRecordMapper.selectBatchIds(contentFileIds).stream()
-                        .map(FileRecord::getUrl)
-                        .collect(Collectors.toList());
-                vo.setContentFileUrls(contentFileUrls);
-            }
-
-            voList.add(vo);
+    @Override
+    @Transactional
+    public void deleteAudit(Long auditId) {
+        PostAudit audit = postAuditMapper.selectById(auditId);
+        if (audit == null) {
+            throw new BusinessException("审核记录不存在");
         }
-        return voList;
+
+        // 删除关联的审核文件记录
+        LambdaQueryWrapper<PostAuditFile> fileWrapper = new LambdaQueryWrapper<>();
+        fileWrapper.eq(PostAuditFile::getAuditId, auditId);
+        List<PostAuditFile> auditFiles = postAuditFileMapper.selectList(fileWrapper);
+        // 释放关联的临时文件
+        for (PostAuditFile af : auditFiles) {
+            FileRecord fr = fileRecordMapper.selectById(af.getFileId());
+            if (fr != null && fr.getStatus() == 0) {
+                fr.setStatus(0);
+                fileRecordMapper.updateById(fr);
+            }
+        }
+        postAuditFileMapper.delete(fileWrapper);
+        postAuditMapper.deleteById(auditId);
+    }
+
+    /** PostAudit → PostAuditVO 通用转换 */
+    private PostAuditVO toAuditVO(PostAudit audit) {
+        PostAuditVO vo = new PostAuditVO();
+        vo.setId(audit.getId());
+        vo.setUserId(audit.getUserId());
+        vo.setType(audit.getType());
+        vo.setPostId(audit.getPostId());
+        vo.setTitle(audit.getTitle());
+        vo.setContent(audit.getContent());
+        vo.setCategoryId(audit.getCategoryId());
+        vo.setCoverFileId(audit.getCoverFileId());
+        vo.setTagIds(audit.getTagIds());
+        vo.setStatus(audit.getStatus());
+        vo.setRejectReason(audit.getRejectReason());
+        vo.setHandlerId(audit.getHandlerId());
+        vo.setCreateTime(audit.getCreateTime());
+
+        // 用户信息
+        User user = userMapper.selectById(audit.getUserId());
+        if (user != null) {
+            vo.setUsername(user.getUsername());
+            vo.setNickname(user.getNickname());
+        }
+
+        // 分类名称
+        if (audit.getCategoryId() != null) {
+            Category category = categoryMapper.selectById(audit.getCategoryId());
+            if (category != null) {
+                vo.setCategoryName(category.getName());
+            }
+        }
+
+        // 封面URL
+        if (audit.getCoverFileId() != null) {
+            FileRecord coverFile = fileRecordMapper.selectById(audit.getCoverFileId());
+            if (coverFile != null) {
+                vo.setCoverUrl(coverFile.getUrl());
+            }
+        }
+
+        // 正文图片
+        LambdaQueryWrapper<PostAuditFile> fileWrapper = new LambdaQueryWrapper<>();
+        fileWrapper.eq(PostAuditFile::getAuditId, audit.getId())
+                .eq(PostAuditFile::getType, "CONTENT");
+        List<PostAuditFile> auditFiles = postAuditFileMapper.selectList(fileWrapper);
+        List<Long> contentFileIds = auditFiles.stream()
+                .map(PostAuditFile::getFileId)
+                .collect(Collectors.toList());
+        vo.setContentFileIds(contentFileIds);
+        if (!contentFileIds.isEmpty()) {
+            List<String> contentFileUrls = fileRecordMapper.selectBatchIds(contentFileIds).stream()
+                    .map(FileRecord::getUrl)
+                    .collect(Collectors.toList());
+            vo.setContentFileUrls(contentFileUrls);
+        }
+
+        return vo;
     }
 
     // ==================== 审核通过 ====================
@@ -234,63 +267,7 @@ public class PostAuditServiceImpl implements PostAuditService {
         wrapper.eq(PostAudit::getUserId, userId)
                 .orderByDesc(PostAudit::getCreateTime);
         List<PostAudit> audits = postAuditMapper.selectList(wrapper);
-
-        List<PostAuditVO> voList = new ArrayList<>();
-        for (PostAudit audit : audits) {
-            PostAuditVO vo = new PostAuditVO();
-            vo.setId(audit.getId());
-            vo.setUserId(audit.getUserId());
-            vo.setType(audit.getType());
-            vo.setPostId(audit.getPostId());
-            vo.setTitle(audit.getTitle());
-            vo.setContent(audit.getContent());
-            vo.setCategoryId(audit.getCategoryId());
-            vo.setCoverFileId(audit.getCoverFileId());
-            vo.setTagIds(audit.getTagIds());
-            vo.setStatus(audit.getStatus());
-            vo.setRejectReason(audit.getRejectReason());
-            vo.setHandlerId(audit.getHandlerId());
-            vo.setCreateTime(audit.getCreateTime());
-
-            User user = userMapper.selectById(audit.getUserId());
-            if (user != null) {
-                vo.setUsername(user.getUsername());
-                vo.setNickname(user.getNickname());
-            }
-
-            if (audit.getCategoryId() != null) {
-                Category category = categoryMapper.selectById(audit.getCategoryId());
-                if (category != null) {
-                    vo.setCategoryName(category.getName());
-                }
-            }
-
-            if (audit.getCoverFileId() != null) {
-                FileRecord coverFile = fileRecordMapper.selectById(audit.getCoverFileId());
-                if (coverFile != null) {
-                    vo.setCoverUrl(coverFile.getUrl());
-                }
-            }
-
-            LambdaQueryWrapper<PostAuditFile> fileWrapper = new LambdaQueryWrapper<>();
-            fileWrapper.eq(PostAuditFile::getAuditId, audit.getId())
-                    .eq(PostAuditFile::getType, "CONTENT");
-            List<PostAuditFile> auditFiles = postAuditFileMapper.selectList(fileWrapper);
-            List<Long> contentFileIds = auditFiles.stream()
-                    .map(PostAuditFile::getFileId)
-                    .collect(Collectors.toList());
-            vo.setContentFileIds(contentFileIds);
-            // 正文图片URL列表（空列表跳过，避免 selectBatchIds 生成 IN () 语法错误）
-            if (!contentFileIds.isEmpty()) {
-                List<String> contentFileUrls = fileRecordMapper.selectBatchIds(contentFileIds).stream()
-                        .map(FileRecord::getUrl)
-                        .collect(Collectors.toList());
-                vo.setContentFileUrls(contentFileUrls);
-            }
-
-            voList.add(vo);
-        }
-        return voList;
+        return audits.stream().map(this::toAuditVO).collect(Collectors.toList());
     }
 
     // ==================== 私有方法 ====================

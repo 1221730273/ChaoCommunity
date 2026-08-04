@@ -7,6 +7,8 @@ import com.ljc.chaocommunity.pojo.vo.CommentVO;
 import org.apache.ibatis.annotations.Mapper;
 import org.apache.ibatis.annotations.Param;
 
+import java.util.List;
+
 @Mapper
 public interface CommentMapper extends BaseMapper<Comment> {
 
@@ -22,4 +24,10 @@ public interface CommentMapper extends BaseMapper<Comment> {
 
     /** 分页查询所有评论（管理端） */
     Page<CommentVO> selectPageVoAll(Page<CommentVO> page);
+
+    /** 根据ID查询单条评论VO */
+    CommentVO selectVoById(@Param("id") Long id);
+
+    /** 查询某父评论下的所有子回复 */
+    List<CommentVO> selectVoByParentId(@Param("parentId") Long parentId);
 }

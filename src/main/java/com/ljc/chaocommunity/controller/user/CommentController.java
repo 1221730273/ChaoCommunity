@@ -4,6 +4,7 @@ import com.ljc.chaocommunity.pojo.dto.CommentDTO;
 import com.ljc.chaocommunity.pojo.dto.CommentPageQueryDTO;
 import com.ljc.chaocommunity.pojo.result.PageResult;
 import com.ljc.chaocommunity.pojo.result.Result;
+import com.ljc.chaocommunity.pojo.vo.CommentContextVO;
 import com.ljc.chaocommunity.pojo.vo.CommentVO;
 import com.ljc.chaocommunity.service.CommentService;
 import io.swagger.v3.oas.annotations.Operation;
@@ -63,5 +64,11 @@ public class CommentController {
     public Result<Void> deleteComment(@PathVariable Long commentId) {
         commentService.deleteComment(commentId);
         return Result.success();
+    }
+
+    @GetMapping("/context/{commentId}")
+    @Operation(summary = "查询评论上下文")
+    public Result<CommentContextVO> getCommentContext(@PathVariable Long commentId) {
+        return Result.success(commentService.getCommentContext(commentId));
     }
 }

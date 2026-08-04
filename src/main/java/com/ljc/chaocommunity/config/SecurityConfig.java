@@ -106,6 +106,7 @@ public class SecurityConfig {
 
                         // 评论浏览
                         .requestMatchers(HttpMethod.GET, "/comment/list").permitAll()
+                        .requestMatchers(HttpMethod.GET, "/comment/context/**").permitAll()
 
                         // 分类
                         .requestMatchers(HttpMethod.GET, "/category/**").permitAll()
@@ -118,6 +119,9 @@ public class SecurityConfig {
 
                         // 公告
                         .requestMatchers(HttpMethod.GET, "/announcement/**").permitAll()
+
+                        // ===== 管理后台接口需要管理员角色 =====
+                        .requestMatchers("/admin/**").hasRole("ADMIN")
 
                         // ===== 其余接口需要认证 =====
                         .anyRequest().authenticated()

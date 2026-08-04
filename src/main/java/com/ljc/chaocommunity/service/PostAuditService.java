@@ -1,5 +1,6 @@
 package com.ljc.chaocommunity.service;
 
+import com.ljc.chaocommunity.pojo.result.PageResult;
 import com.ljc.chaocommunity.pojo.vo.PostAuditVO;
 
 import java.util.List;
@@ -10,10 +11,10 @@ import java.util.List;
 public interface PostAuditService {
 
     /**
-     * 获取审核列表
+     * 分页查询审核列表
      * @param status 审核状态（null=全部，0=待审核，1=通过，2=拒绝）
      */
-    List<PostAuditVO> getAuditList(Integer status);
+    PageResult<PostAuditVO> getAuditList(Integer status, int page, int size);
 
     /**
      * 审核通过
@@ -29,4 +30,9 @@ public interface PostAuditService {
      * 根据用户ID查询审核记录
      */
     List<PostAuditVO> getAuditListByUserId(Long userId);
+
+    /**
+     * 删除审核记录（管理端）
+     */
+    void deleteAudit(Long auditId);
 }

@@ -1,6 +1,8 @@
 package com.ljc.chaocommunity.service.Impl;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
+import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.ljc.chaocommunity.exception.BusinessException;
 import com.ljc.chaocommunity.mapper.FileRecordMapper;
 import com.ljc.chaocommunity.mapper.UserApplyMapper;
@@ -10,6 +12,7 @@ import com.ljc.chaocommunity.pojo.dto.UserProfileDTO;
 import com.ljc.chaocommunity.pojo.entity.FileRecord;
 import com.ljc.chaocommunity.pojo.entity.User;
 import com.ljc.chaocommunity.pojo.entity.UserApply;
+import com.ljc.chaocommunity.pojo.result.PageResult;
 import com.ljc.chaocommunity.pojo.vo.UserApplyVO;
 import com.ljc.chaocommunity.pojo.vo.UserVO;
 import com.ljc.chaocommunity.service.UserService;
@@ -22,6 +25,8 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.UUID;
+import java.util.stream.Collectors;
 
 @Service
 public class UserServiceImpl implements UserService {
@@ -152,13 +157,13 @@ public class UserServiceImpl implements UserService {
     // ==================== 管理端：用户管理 ====================
 
     @Override
-    public List<UserVO> listAllUsers() {
-        List<User> users = userMapper.selectList(null);
-        List<UserVO> voList = new ArrayList<>();
-        for (User user : users) {
-            voList.add(buildUserVO(user, true));
-        }
-        return voList;
+    public PageResult<UserVO> listAllUsers(int page, int size) {
+        Page<User> p = new Page<>(page, size);
+        Page<User> resultPage = userMapper.selectPage(p, new LambdaQueryWrapper<User>().orderByDesc(User::getCreateTime));
+        List<UserVO> voList = resultPage.getRecords().stream()
+                .map(u -> buildUserVO(u, true))
+                .collect(Collectors.toList());
+        return new PageResult<>(resultPage.getTotal(), voList);
     }
 
     @Override
@@ -215,16 +220,18 @@ public class UserServiceImpl implements UserService {
     // ==================== 管理端：审核 ====================
 
     @Override
-    public List<UserApplyVO> getApplyList(Integer status) {
+    public PageResult<UserApplyVO> getApplyList(Integer status, int page, int size) {
         LambdaQueryWrapper<UserApply> wrapper = new LambdaQueryWrapper<>();
         if (status != null) {
             wrapper.eq(UserApply::getStatus, status);
         }
         wrapper.orderByDesc(UserApply::getCreateTime);
-        List<UserApply> applies = userApplyMapper.selectList(wrapper);
+
+        Page<UserApply> p = new Page<>(page, size);
+        Page<UserApply> resultPage = userApplyMapper.selectPage(p, wrapper);
 
         List<UserApplyVO> voList = new ArrayList<>();
-        for (UserApply apply : applies) {
+        for (UserApply apply : resultPage.getRecords()) {
             User user = userMapper.selectById(apply.getUserId());
             if (user == null) continue;
 
@@ -240,12 +247,10 @@ public class UserServiceImpl implements UserService {
             vo.setRejectReason(apply.getRejectReason());
             vo.setCreateTime(apply.getCreateTime());
 
-            // 当前值（方便管理员对比）
             vo.setCurrentNickname(user.getNickname());
             vo.setCurrentAvatar(user.getAvatar());
             vo.setCurrentSignature(user.getSignature());
 
-            // 如果是头像审核，查出新头像的 URL
             if (apply.getAvatarFileId() != null) {
                 FileRecord fileRecord = fileRecordMapper.selectById(apply.getAvatarFileId());
                 if (fileRecord != null) {
@@ -255,7 +260,7 @@ public class UserServiceImpl implements UserService {
 
             voList.add(vo);
         }
-        return voList;
+        return new PageResult<>(resultPage.getTotal(), voList);
     }
 
     @Override
@@ -345,5 +350,53 @@ public class UserServiceImpl implements UserService {
         apply.setRejectReason(reason);
         apply.setHandlerId(handlerId);
         userApplyMapper.updateById(apply);
+    }
+
+    @Override
+    public void deleteApply(Long applyId) {
+        UserApply apply = userApplyMapper.selectById(applyId);
+        if (apply == null) throw new BusinessException("审核记录不存在");
+        userApplyMapper.deleteById(applyId);
+    }
+
+    // ==================== 管理端：用户资料管理 ====================
+
+    @Override
+    public String resetNickname(Long userId) {
+        User user = userMapper.selectById(userId);
+        if (user == null) throw new BusinessException("用户不存在");
+        String newNickname = "user_" + UUID.randomUUID().toString().replace("-", "").substring(0, 10);
+        user.setNickname(newNickname);
+        userMapper.updateById(user);
+        return newNickname;
+    }
+
+    @Override
+    public void clearSignature(Long userId) {
+        User user = userMapper.selectById(userId);
+        if (user == null) throw new BusinessException("用户不存在");
+        LambdaUpdateWrapper<User> uw = new LambdaUpdateWrapper<>();
+        uw.eq(User::getId, userId).set(User::getSignature, null);
+        userMapper.update(null, uw);
+    }
+
+    @Override
+    @Transactional
+    public void clearAvatar(Long userId) {
+        User user = userMapper.selectById(userId);
+        if (user == null) throw new BusinessException("用户不存在");
+        // 释放旧头像文件
+        if (user.getAvatarFileId() != null) {
+            FileRecord fr = fileRecordMapper.selectById(user.getAvatarFileId());
+            if (fr != null && fr.getStatus() == 1) {
+                fr.setStatus(0);
+                fileRecordMapper.updateById(fr);
+            }
+        }
+        LambdaUpdateWrapper<User> uw = new LambdaUpdateWrapper<>();
+        uw.eq(User::getId, userId)
+                .set(User::getAvatar, null)
+                .set(User::getAvatarFileId, null);
+        userMapper.update(null, uw);
     }
 }

@@ -59,9 +59,11 @@ public class AdminPostController {
     // ===== 审核管理 =====
 
     @GetMapping("/audit/list")
-    @Operation(summary = "查询所有审核列表")
-    public Result<List<PostAuditVO>> auditList(@RequestParam(required = false) Integer status) {
-        return Result.success(postAuditService.getAuditList(status));
+    @Operation(summary = "分页查询审核列表")
+    public Result<PageResult<PostAuditVO>> auditList(@RequestParam(required = false) Integer status,
+                                                      @RequestParam(defaultValue = "1") int page,
+                                                      @RequestParam(defaultValue = "15") int size) {
+        return Result.success(postAuditService.getAuditList(status, page, size));
     }
 
     @GetMapping("/audit/user/{userId}")
@@ -81,6 +83,13 @@ public class AdminPostController {
     @Operation(summary = "审核拒绝")
     public Result<Void> reject(@Valid @RequestBody RejectAuditDTO dto) {
         postAuditService.rejectAudit(dto.getId(), dto.getReason());
+        return Result.success();
+    }
+
+    @DeleteMapping("/audit/{id}")
+    @Operation(summary = "删除审核记录")
+    public Result<Void> deleteAudit(@PathVariable Long id) {
+        postAuditService.deleteAudit(id);
         return Result.success();
     }
 }

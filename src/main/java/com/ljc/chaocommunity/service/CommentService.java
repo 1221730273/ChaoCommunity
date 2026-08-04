@@ -3,6 +3,7 @@ package com.ljc.chaocommunity.service;
 import com.ljc.chaocommunity.pojo.dto.CommentDTO;
 import com.ljc.chaocommunity.pojo.dto.CommentPageQueryDTO;
 import com.ljc.chaocommunity.pojo.result.PageResult;
+import com.ljc.chaocommunity.pojo.vo.CommentContextVO;
 import com.ljc.chaocommunity.pojo.vo.CommentVO;
 
 public interface CommentService {
@@ -24,4 +25,7 @@ public interface CommentService {
 
     /** 删除评论（管理端，不限本人） */
     void adminDeleteComment(Long commentId);
+
+    /** 查询评论上下文（管理端跳转用） */
+    CommentContextVO getCommentContext(Long commentId);
 }

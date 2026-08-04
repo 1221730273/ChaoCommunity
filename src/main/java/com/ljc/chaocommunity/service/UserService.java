@@ -2,6 +2,7 @@ package com.ljc.chaocommunity.service;
 
 import com.ljc.chaocommunity.pojo.dto.CoverUpdateDTO;
 import com.ljc.chaocommunity.pojo.dto.UserProfileDTO;
+import com.ljc.chaocommunity.pojo.result.PageResult;
 import com.ljc.chaocommunity.pojo.vo.UserApplyVO;
 import com.ljc.chaocommunity.pojo.vo.UserVO;
 import jakarta.validation.Valid;
@@ -28,8 +29,8 @@ public interface UserService {
 
     // ===== 管理端：用户管理 =====
 
-    /** 查询所有用户 */
-    List<UserVO> listAllUsers();
+    /** 分页查询所有用户 */
+    PageResult<UserVO> listAllUsers(int page, int size);
 
     /** 根据ID或用户名查询用户详情 */
     UserVO adminGetUserDetail(Long userId);
@@ -43,11 +44,23 @@ public interface UserService {
     // ===== 管理端：审核 =====
 
     /** 查询审核列表 */
-    List<UserApplyVO> getApplyList(Integer status);
+    PageResult<UserApplyVO> getApplyList(Integer status, int page, int size);
 
     /** 审核通过 */
     void approveApply(Long applyId);
 
     /** 审核驳回 */
     void rejectApply(Long applyId, String reason);
+
+    /** 删除审核记录 */
+    void deleteApply(Long applyId);
+
+    /** 重置用户昵称 */
+    String resetNickname(Long userId);
+
+    /** 清空用户签名 */
+    void clearSignature(Long userId);
+
+    /** 清空用户头像 */
+    void clearAvatar(Long userId);
 }

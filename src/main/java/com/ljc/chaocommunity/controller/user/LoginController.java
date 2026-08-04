@@ -34,7 +34,6 @@ public class LoginController {
         loginService.register(dto);
         return Result.success();
 
-        //TODO 以后注册需要邮箱收验证码
     }
 
     @PostMapping("/logout")
