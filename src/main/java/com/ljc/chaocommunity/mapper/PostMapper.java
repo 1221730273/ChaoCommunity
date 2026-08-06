@@ -8,6 +8,8 @@ import org.apache.ibatis.annotations.Mapper;
 import org.apache.ibatis.annotations.Param;
 import org.apache.ibatis.annotations.Select;
 
+import java.util.List;
+
 @Mapper
 public interface PostMapper extends BaseMapper<Post> {
 
@@ -57,5 +59,8 @@ public interface PostMapper extends BaseMapper<Post> {
     Page<PostVO> selectPageVoFeaturedNewest(Page<PostVO> page);
 
     Page<PostVO> selectPageVoFeaturedHot(Page<PostVO> page);
+
+    /** 批量根据ID查询PostVO，结果顺序不定，调用方需自行重排序 */
+    List<PostVO> getPostVOsByIds(@Param("ids") List<Long> ids);
 
 }

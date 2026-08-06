@@ -91,10 +91,14 @@ public class SecurityConfig {
                         .requestMatchers(HttpMethod.GET, "/post/user/**").permitAll()
                         // 帖子详情：仅匹配 /post/数字ID
                         .requestMatchers(new RegexRequestMatcher("/post/\\d+", "GET")).permitAll()
+                        // 帖子搜索
+                        .requestMatchers(HttpMethod.GET, "/post/search").permitAll()
 
                         // 用户主页
                         .requestMatchers(HttpMethod.GET, "/user/*/posts").permitAll()
                         .requestMatchers(HttpMethod.GET, "/user/*/profile").permitAll()
+                        // 用户搜索
+                        .requestMatchers(HttpMethod.GET, "/user/search").permitAll()
 
                         // /follow/me 需要认证（必须在 /* 通配之前）
                         .requestMatchers(HttpMethod.GET, "/follow/me/**").authenticated()

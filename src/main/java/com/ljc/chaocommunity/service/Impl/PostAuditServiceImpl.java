@@ -2,6 +2,7 @@ package com.ljc.chaocommunity.service.Impl;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
+import com.ljc.chaocommunity.service.PostSearchService;
 import com.ljc.chaocommunity.exception.BusinessException;
 import com.ljc.chaocommunity.mapper.*;
 import com.ljc.chaocommunity.pojo.entity.*;
@@ -43,6 +44,9 @@ public class PostAuditServiceImpl implements PostAuditService {
 
     @Autowired
     private OssUtil ossUtil;
+
+    @Autowired
+    private PostSearchService postSearchService;
 
     // ==================== 管理端：审核列表 ====================
 
@@ -257,6 +261,8 @@ public class PostAuditServiceImpl implements PostAuditService {
         // 5. 更新帖子 coverUrl（不动内容）
         post.setCoverUrl(moveResult.url());
         postMapper.updateById(post);
+        // ES 同步
+        postSearchService.index(post);
     }
 
     // ==================== 根据用户ID查询审核 ====================
@@ -316,6 +322,8 @@ public class PostAuditServiceImpl implements PostAuditService {
         post.setCoverUrl(coverUrl);
         post.setStatus(0); // 审核通过，展示
         postMapper.insert(post);
+        // ES 同步
+        postSearchService.index(post);
 
         // 4. 处理正文图片：temp/ → post/content/，替换 Markdown URL
         String content = post.getContent();
@@ -349,6 +357,8 @@ public class PostAuditServiceImpl implements PostAuditService {
         if (!content.equals(post.getContent())) {
             post.setContent(content);
             postMapper.updateById(post);
+            // ES 同步（内容URL替换后重新覆盖）
+            postSearchService.index(post);
         }
 
         // 5. 封面 post_file
@@ -519,6 +529,8 @@ public class PostAuditServiceImpl implements PostAuditService {
         }
         // 保持原有 status（不改变可见性）
         postMapper.updateById(post);
+        // ES 同步
+        postSearchService.index(post);
 
         // ===== 6. 更新标签 =====
         if (audit.getTagIds() != null) {

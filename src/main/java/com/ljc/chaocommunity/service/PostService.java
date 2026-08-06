@@ -61,4 +61,13 @@ public interface PostService {
 
     /** 浏览量+1 */
     void incrementViewCount(Long postId);
+
+    /** 设置/取消置顶 */
+    void toggleTop(Long postId);
+
+    /** 管理员隐藏某用户的所有帖子 */
+    int adminHideUserPosts(Long userId);
+
+    /** 给 PostVO 列表填充标签（供 ES 搜索等场景复用） */
+    void fillTags(List<PostVO> voList);
 }

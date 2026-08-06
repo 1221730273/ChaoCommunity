@@ -14,7 +14,8 @@ public class SecurityUtils {
      */
     public static LoginUser getLoginUser() {
         Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
-        if (authentication == null || !authentication.isAuthenticated()) {
+        if (authentication == null || !authentication.isAuthenticated()
+                || !(authentication.getPrincipal() instanceof LoginUser)) {
             throw new RuntimeException("用户未登录");
         }
         return (LoginUser) authentication.getPrincipal();
@@ -25,6 +26,17 @@ public class SecurityUtils {
      */
     public static Long getCurrentUserId() {
         return getLoginUser().getUser().getId();
+    }
+
+    /**
+     * 获取当前登录用户ID，未登录返回 null
+     */
+    public static Long getCurrentUserIdOrNull() {
+        try {
+            return getLoginUser().getUser().getId();
+        } catch (RuntimeException e) {
+            return null;
+        }
     }
 
     /**

@@ -2,6 +2,7 @@ package com.ljc.chaocommunity.service.Impl;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
+import com.ljc.chaocommunity.service.PostSearchService;
 import com.ljc.chaocommunity.exception.BusinessException;
 import com.ljc.chaocommunity.mapper.CommentMapper;
 import com.ljc.chaocommunity.mapper.PostMapper;
@@ -28,6 +29,9 @@ public class CommentServiceImpl implements CommentService {
 
     @Autowired
     private PostMapper postMapper;
+
+    @Autowired
+    private PostSearchService postSearchService;
 
     @Override
     public PageResult<CommentVO> pageQueryByPostId(CommentPageQueryDTO dto) {
@@ -73,10 +77,13 @@ public class CommentServiceImpl implements CommentService {
         commentMapper.insert(comment);
 
         // 4. 更新帖子的评论数
+        int newCount = post.getCommentCount() + 1;
         Post updatePost = new Post();
         updatePost.setId(dto.getPostId());
-        updatePost.setCommentCount(post.getCommentCount() + 1);
+        updatePost.setCommentCount(newCount);
         postMapper.updateById(updatePost);
+        // ES 同步
+        postSearchService.updateCommentCount(dto.getPostId(), newCount);
 
         return comment.getId();
     }
@@ -90,6 +97,7 @@ public class CommentServiceImpl implements CommentService {
     }
 
     @Override
+    @Transactional
     public void deleteComment(Long commentId) {
         // 1. 校验评论是否存在
         Comment comment = commentMapper.selectById(commentId);
@@ -109,7 +117,20 @@ public class CommentServiceImpl implements CommentService {
             throw new BusinessException("只能删除自己的评论");
         }
 
+        // 3. 软删除评论
         commentMapper.deleteById(commentId);
+
+        // 4. 更新帖子评论数 -1
+        Post post = postMapper.selectById(comment.getPostId());
+        if (post != null && post.getCommentCount() > 0) {
+            int newCount = post.getCommentCount() - 1;
+            Post updatePost = new Post();
+            updatePost.setId(post.getId());
+            updatePost.setCommentCount(newCount);
+            postMapper.updateById(updatePost);
+            // ES 同步
+            postSearchService.updateCommentCount(post.getId(), newCount);
+        }
     }
 
     @Override
@@ -120,11 +141,25 @@ public class CommentServiceImpl implements CommentService {
     }
 
     @Override
+    @Transactional
     public void adminDeleteComment(Long commentId) {
-        if (commentMapper.selectById(commentId) == null) {
+        Comment comment = commentMapper.selectById(commentId);
+        if (comment == null) {
             throw new BusinessException("评论不存在");
         }
         commentMapper.deleteById(commentId);
+
+        // 更新帖子评论数 -1
+        Post post = postMapper.selectById(comment.getPostId());
+        if (post != null && post.getCommentCount() > 0) {
+            int newCount = post.getCommentCount() - 1;
+            Post updatePost = new Post();
+            updatePost.setId(post.getId());
+            updatePost.setCommentCount(newCount);
+            postMapper.updateById(updatePost);
+            // ES 同步
+            postSearchService.updateCommentCount(post.getId(), newCount);
+        }
     }
 
 

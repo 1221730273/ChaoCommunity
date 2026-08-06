@@ -33,6 +33,13 @@ mybatis-plus:
       logic-delete-value: 1        # 已删除的值
       logic-not-delete-value: 0    # 未删除的值
 
+# Elasticsearch
+es:
+  host: 127.0.0.1
+  port: 9200
+  username: elastic
+  password: 123456
+
 # 阿里云 OSS 配置（AccessKey 从环境变量读取）
 oss:
   endpoint: https://oss-cn-beijing.aliyuncs.com

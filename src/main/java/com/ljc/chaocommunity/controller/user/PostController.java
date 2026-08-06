@@ -8,8 +8,10 @@ import com.ljc.chaocommunity.pojo.result.PageResult;
 import com.ljc.chaocommunity.pojo.result.Result;
 import com.ljc.chaocommunity.pojo.vo.PostAuditVO;
 import com.ljc.chaocommunity.pojo.vo.PostVO;
+import com.ljc.chaocommunity.service.PostSearchService;
 import com.ljc.chaocommunity.service.PostService;
 import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -25,6 +27,9 @@ public class PostController {
 
     @Autowired
     private PostService postService;
+
+    @Autowired
+    private PostSearchService postSearchService;
 
 
     /**
@@ -167,8 +172,18 @@ public class PostController {
         return Result.success();
     }
 
-
-
-
+    /**
+     * 搜索帖子（仅可见帖子）
+     */
+    @GetMapping("/search")
+    @Operation(summary = "搜索帖子（关键词 + 分类 + 排序）")
+    public Result<PageResult<PostVO>> search(
+            @Parameter(description = "搜索关键词") @RequestParam(required = false) String keyword,
+            @Parameter(description = "分类ID") @RequestParam(required = false) Long categoryId,
+            @Parameter(description = "排序：comprehensive(综合) / newest(最新) / hot(最热)") @RequestParam(defaultValue = "comprehensive") String sort,
+            @Parameter(description = "页码") @RequestParam(defaultValue = "1") int page,
+            @Parameter(description = "每页条数") @RequestParam(defaultValue = "10") int size) {
+        return Result.success(postSearchService.search(keyword, categoryId, sort, false, page, size));
+    }
 
 }

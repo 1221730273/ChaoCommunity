@@ -83,7 +83,7 @@ public class MyMetaObjectHandler implements MetaObjectHandler {
 
 //TODO 后续可以把举报功能弄的更正式 比如举报理由 举报的图片
 
-//TODO 用户可以有等级像b站那样 等级,经验
+//TODO 用户可以有等级像b站那样 等级,经验  查找用户的时候可以根据等级由高到低查找
 
 //TODO 后续给user数据库表增加是否封禁字段 配合springsecurity 实现用户封禁
 

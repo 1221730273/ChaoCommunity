@@ -90,6 +90,24 @@
             <artifactId>alibabacloud-oss-v2</artifactId>
             <version>0.5.0</version>
         </dependency>
+        <!-- Elasticsearch -->
+        <dependency>
+            <groupId>co.elastic.clients</groupId>
+            <artifactId>elasticsearch-java</artifactId>
+            <version>9.4.4</version>
+        </dependency>
+        <dependency>
+            <groupId>org.elasticsearch.client</groupId>
+            <artifactId>elasticsearch-rest-client</artifactId>
+            <version>9.4.4</version>
+        </dependency>
+        <!-- ES RestClient 需要 HC4 的异步 HTTP 类型 -->
+        <dependency>
+            <groupId>org.apache.httpcomponents</groupId>
+            <artifactId>httpasyncclient</artifactId>
+            <version>4.1.5</version>
+        </dependency>
+
     </dependencies>
 
     <build>

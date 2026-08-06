@@ -12,6 +12,7 @@ import com.ljc.chaocommunity.pojo.result.PageResult;
 import com.ljc.chaocommunity.pojo.vo.PostAuditVO;
 import com.ljc.chaocommunity.pojo.vo.PostVO;
 import com.ljc.chaocommunity.pojo.vo.TagVO;
+import com.ljc.chaocommunity.service.PostSearchService;
 import com.ljc.chaocommunity.service.PostService;
 import com.ljc.chaocommunity.util.SecurityUtils;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -54,6 +55,9 @@ public class PostServiceImpl implements PostService {
 
     @Autowired
     private CommentMapper commentMapper;
+
+    @Autowired
+    private PostSearchService postSearchService;
 
 
     /**
@@ -167,6 +171,8 @@ public class PostServiceImpl implements PostService {
         commentMapper.delete(commentWrapper);
 
         postMapper.deleteById(postId);
+        // ES 同步：删除
+        postSearchService.delete(postId);
     }
 
 
@@ -333,8 +339,8 @@ public class PostServiceImpl implements PostService {
 
         // 非公开帖子只有作者和管理员可见
         if (vo.getStatus() != 0) {
-            Long currentUserId = SecurityUtils.getCurrentUserId();
-            if (!vo.getUserId().equals(currentUserId) && !SecurityUtils.isAdmin()) {
+            Long currentUserId = SecurityUtils.getCurrentUserIdOrNull();
+            if (currentUserId == null || (!vo.getUserId().equals(currentUserId) && !SecurityUtils.isAdmin())) {
                 throw new BusinessException("帖子不可见");
             }
         }
@@ -386,7 +392,12 @@ public class PostServiceImpl implements PostService {
                 resultPage = postMapper.selectPageVoHot(page, dto.getCategoryId());
                 break;
             case "follow":
-                resultPage = postMapper.selectPageVoFollow(page, dto.getCategoryId(), SecurityUtils.getCurrentUserId());
+                Long uid = SecurityUtils.getCurrentUserIdOrNull();
+                if (uid == null) {
+                    resultPage = postMapper.selectPageVoNewest(page, dto.getCategoryId());
+                } else {
+                    resultPage = postMapper.selectPageVoFollow(page, dto.getCategoryId(), uid);
+                }
                 break;
             default:
                 resultPage = postMapper.selectPageVoNewest(page, dto.getCategoryId());
@@ -401,9 +412,9 @@ public class PostServiceImpl implements PostService {
      */
     @Override
     public PageResult<PostVO> getUserPosts(Long userId, PostPageQueryDTO dto) {
-        Long currentUserId = SecurityUtils.getCurrentUserId();
+        Long currentUserId = SecurityUtils.getCurrentUserIdOrNull();
         // 查自己时不过滤status，查别人只查可见帖子
-        boolean includeAllStatus = currentUserId.equals(userId);
+        boolean includeAllStatus = currentUserId != null && currentUserId.equals(userId);
 
         Page<PostVO> page = new Page<>(dto.getPage(), dto.getSize());
         Page<PostVO> resultPage = "hot".equals(dto.getSort())
@@ -417,7 +428,8 @@ public class PostServiceImpl implements PostService {
     /**
      * 给帖子列表填充标签
      */
-    private void fillTags(List<PostVO> voList) {
+    @Override
+    public void fillTags(List<PostVO> voList) {
         for (PostVO vo : voList) {
             LambdaQueryWrapper<PostTag> wrapper = new LambdaQueryWrapper<>();
             wrapper.eq(PostTag::getPostId, vo.getId());
@@ -451,6 +463,8 @@ public class PostServiceImpl implements PostService {
         }
         post.setIsFeatured(post.getIsFeatured() == 1 ? 0 : 1);
         postMapper.updateById(post);
+        // ES 同步
+        postSearchService.index(post);
     }
 
     @Override
@@ -500,10 +514,13 @@ public class PostServiceImpl implements PostService {
     public void incrementViewCount(Long postId) {
         Post post = postMapper.selectById(postId);
         if (post != null) {
+            int newCount = post.getViewCount() + 1;
             Post updatePost = new Post();
             updatePost.setId(postId);
-            updatePost.setViewCount(post.getViewCount() + 1);
+            updatePost.setViewCount(newCount);
             postMapper.updateById(updatePost);
+            // ES 同步
+            postSearchService.updateViewCount(postId, newCount);
         }
     }
 
@@ -511,7 +528,7 @@ public class PostServiceImpl implements PostService {
     // ==================== 用户自管理方法 ====================
 
     /**
-     * 切换帖子隐藏状态（0↔1），仅本人
+     * 切换帖子隐藏状态（0↔1），本人或管理员
      */
     @Override
     @Transactional
@@ -521,12 +538,15 @@ public class PostServiceImpl implements PostService {
             throw new BusinessException("帖子不存在");
         }
         Long currentUserId = SecurityUtils.getCurrentUserId();
-        if (!post.getUserId().equals(currentUserId)) {
+        if (!post.getUserId().equals(currentUserId) && !SecurityUtils.isAdmin()) {
             throw new BusinessException("无权操作该帖子");
         }
         // 切换：0→1 或 1→0
-        post.setStatus(post.getStatus() == 0 ? 1 : 0);
+        int newStatus = post.getStatus() == 0 ? 1 : 0;
+        post.setStatus(newStatus);
         postMapper.updateById(post);
+        // ES 同步
+        postSearchService.updateStatus(postId, newStatus);
     }
 
     /**
@@ -651,6 +671,40 @@ public class PostServiceImpl implements PostService {
         commentMapper.delete(commentWrapper);
 
         postMapper.deleteById(postId);
+        // ES 同步：删除
+        postSearchService.delete(postId);
+    }
+
+    // ==================== 置顶管理 ====================
+
+    @Override
+    @Transactional
+    public void toggleTop(Long postId) {
+        Post post = postMapper.selectById(postId);
+        if (post == null) {
+            throw new BusinessException("帖子不存在");
+        }
+        int newTop = post.getTop() == 1 ? 0 : 1;
+        post.setTop(newTop);
+        postMapper.updateById(post);
+        // ES 同步
+        postSearchService.updateTop(postId, newTop);
+    }
+
+    // ==================== 管理员隐藏用户帖子 ====================
+
+    @Override
+    @Transactional
+    public int adminHideUserPosts(Long userId) {
+        com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper<Post> uw =
+                new com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper<>();
+        uw.eq(Post::getUserId, userId)
+          .eq(Post::getStatus, 0)
+          .set(Post::getStatus, 1);
+        int rows = postMapper.update(null, uw);
+        // ES 同步
+        postSearchService.batchHideByUserId(userId);
+        return rows;
     }
 
     /**

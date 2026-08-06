@@ -15,6 +15,7 @@ import com.ljc.chaocommunity.pojo.entity.UserApply;
 import com.ljc.chaocommunity.pojo.result.PageResult;
 import com.ljc.chaocommunity.pojo.vo.UserApplyVO;
 import com.ljc.chaocommunity.pojo.vo.UserVO;
+import com.ljc.chaocommunity.service.UserSearchService;
 import com.ljc.chaocommunity.service.UserService;
 import com.ljc.chaocommunity.util.OssUtil;
 import com.ljc.chaocommunity.util.SecurityUtils;
@@ -45,6 +46,9 @@ public class UserServiceImpl implements UserService {
 
     @Autowired
     private RedisTemplate<String, Object> redisTemplate;
+
+    @Autowired
+    private UserSearchService userSearchService;
 
     // ==================== 用户端：提交修改申请 ====================
 
@@ -207,6 +211,9 @@ public class UserServiceImpl implements UserService {
         user.setStatus(newStatus);
         userMapper.updateById(user);
 
+        // ES 同步：更新封禁状态
+        userSearchService.updateStatus(userId, newStatus);
+
         // 封禁时踢掉该用户的登录token
         if (newStatus == 1) {
             String token = (String) redisTemplate.opsForValue().get("auth:user:" + userId + ":token");
@@ -326,6 +333,8 @@ public class UserServiceImpl implements UserService {
         }
 
         userMapper.updateById(user);
+        // ES 同步：资料/头像变更
+        userSearchService.index(user);
 
         // 更新申请状态
         apply.setStatus(1);
@@ -368,6 +377,7 @@ public class UserServiceImpl implements UserService {
         String newNickname = "user_" + UUID.randomUUID().toString().replace("-", "").substring(0, 10);
         user.setNickname(newNickname);
         userMapper.updateById(user);
+        userSearchService.index(user);
         return newNickname;
     }
 
@@ -378,6 +388,9 @@ public class UserServiceImpl implements UserService {
         LambdaUpdateWrapper<User> uw = new LambdaUpdateWrapper<>();
         uw.eq(User::getId, userId).set(User::getSignature, null);
         userMapper.update(null, uw);
+        // ES 同步
+        User updated = userMapper.selectById(userId);
+        if (updated != null) userSearchService.index(updated);
     }
 
     @Override
@@ -398,5 +411,8 @@ public class UserServiceImpl implements UserService {
                 .set(User::getAvatar, null)
                 .set(User::getAvatarFileId, null);
         userMapper.update(null, uw);
+        // ES 同步
+        User updated = userMapper.selectById(userId);
+        if (updated != null) userSearchService.index(updated);
     }
 }

@@ -4,8 +4,10 @@ import com.ljc.chaocommunity.pojo.result.PageResult;
 import com.ljc.chaocommunity.pojo.result.Result;
 import com.ljc.chaocommunity.pojo.vo.UserApplyVO;
 import com.ljc.chaocommunity.pojo.vo.UserVO;
+import com.ljc.chaocommunity.service.UserSearchService;
 import com.ljc.chaocommunity.service.UserService;
 import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.web.bind.annotation.*;
@@ -20,6 +22,9 @@ public class AdminUserController {
 
     @Autowired
     private UserService userService;
+
+    @Autowired
+    private UserSearchService userSearchService;
 
     // ===== 用户管理 =====
 
@@ -37,9 +42,13 @@ public class AdminUserController {
     }
 
     @GetMapping("/search")
-    @Operation(summary = "根据用户名/昵称搜索用户")
-    public Result<List<UserVO>> search(@RequestParam String keyword) {
-        return Result.success(userService.searchUsers(keyword));
+    @Operation(summary = "ES搜索用户（含封禁用户）")
+    public Result<PageResult<UserVO>> search(
+            @Parameter(description = "搜索关键词") @RequestParam(required = false) String keyword,
+            @Parameter(description = "排序：comprehensive(相关度) / followers(粉丝数)") @RequestParam(defaultValue = "comprehensive") String sort,
+            @Parameter(description = "页码") @RequestParam(defaultValue = "1") int page,
+            @Parameter(description = "每页条数") @RequestParam(defaultValue = "15") int size) {
+        return Result.success(userSearchService.search(keyword, true, sort, page, size));
     }
 
     @PutMapping("/{userId}/ban")
@@ -78,6 +87,14 @@ public class AdminUserController {
     public Result<Void> deleteApply(@PathVariable Long applyId) {
         userService.deleteApply(applyId);
         return Result.success();
+    }
+
+    // ===== ES同步 =====
+
+    @PostMapping("/es-sync")
+    @Operation(summary = "全量同步用户到ES")
+    public Result<Long> syncEs() {
+        return Result.success(userSearchService.fullSync());
     }
 
     // ===== 用户资料管理 =====

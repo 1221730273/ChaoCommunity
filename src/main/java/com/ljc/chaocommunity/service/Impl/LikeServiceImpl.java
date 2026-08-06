@@ -1,6 +1,7 @@
 package com.ljc.chaocommunity.service.Impl;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.ljc.chaocommunity.service.PostSearchService;
 import com.ljc.chaocommunity.exception.BusinessException;
 import com.ljc.chaocommunity.mapper.CommentLikeMapper;
 import com.ljc.chaocommunity.mapper.CommentMapper;
@@ -31,6 +32,9 @@ public class LikeServiceImpl implements LikeService {
     @Autowired
     private CommentMapper commentMapper;
 
+    @Autowired
+    private PostSearchService postSearchService;
+
     // ==================== 帖子点赞 ====================
 
     @Override
@@ -55,10 +59,13 @@ public class LikeServiceImpl implements LikeService {
         postLike.setPostId(postId);
         postLikeMapper.insert(postLike);
 
+        int newCount = post.getLikeCount() + 1;
         Post updatePost = new Post();
         updatePost.setId(postId);
-        updatePost.setLikeCount(post.getLikeCount() + 1);
+        updatePost.setLikeCount(newCount);
         postMapper.updateById(updatePost);
+        // ES 同步
+        postSearchService.updateLikeCount(postId, newCount);
     }
 
     @Override
@@ -81,10 +88,13 @@ public class LikeServiceImpl implements LikeService {
 
         postLikeMapper.deleteById(postLike.getId());
 
+        int newCount = Math.max(0, post.getLikeCount() - 1);
         Post updatePost = new Post();
         updatePost.setId(postId);
-        updatePost.setLikeCount(Math.max(0, post.getLikeCount() - 1));
+        updatePost.setLikeCount(newCount);
         postMapper.updateById(updatePost);
+        // ES 同步
+        postSearchService.updateLikeCount(postId, newCount);
     }
 
     @Override

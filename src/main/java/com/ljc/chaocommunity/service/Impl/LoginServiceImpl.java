@@ -10,6 +10,7 @@ import com.ljc.chaocommunity.pojo.entity.LoginUser;
 import com.ljc.chaocommunity.pojo.entity.User;
 import com.ljc.chaocommunity.pojo.vo.LoginVO;
 import com.ljc.chaocommunity.service.LoginService;
+import com.ljc.chaocommunity.service.UserSearchService;
 import com.ljc.chaocommunity.util.SecurityUtils;
 import jakarta.servlet.http.HttpServletRequest;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -42,6 +43,9 @@ public class LoginServiceImpl implements LoginService {
 
     @Autowired
     private HttpServletRequest request;
+
+    @Autowired
+    private UserSearchService userSearchService;
 
     @Override
     public LoginVO login(LoginDTO dto) {
@@ -111,6 +115,8 @@ public class LoginServiceImpl implements LoginService {
         user.setNickname(dto.getUsername());
         user.setEmail(dto.getEmail());
         userMapper.insert(user);
+        // ES 同步：新用户
+        userSearchService.index(user);
     }
 
 
