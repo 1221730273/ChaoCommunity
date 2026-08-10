@@ -96,6 +96,16 @@ public class MyMetaObjectHandler implements MetaObjectHandler {
 
 //TODO 以后设计禁言用户不能评论 不能发帖 不能自己的修改资料
 
+//TODO 解决redis缓存击穿问题（大量请求访问一个redis导致redis miss 请求全部到数据库上）
+
+//TODO 防止用户刷浏览量
+
+//TODO 用户删除自己审核失败记录逻辑删除 后台管理管查询的审核记录是数据库里面有的管理员删除是物理删除
+
+//TODO 因为帖子界面的分页查询没有用缓存 以后新增post浏览对象 存储一部分内容 标题 作者 时间 封面 标签 浏览量 分类 点赞量 评论数 集成在一个表上 直接查不用联查其他表
+
+//TODO 新增反馈接口
+
 
 
 

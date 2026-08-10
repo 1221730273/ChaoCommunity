@@ -1,6 +1,7 @@
 package com.ljc.chaocommunity.service.Impl;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
 import com.ljc.chaocommunity.service.PostSearchService;
 import com.ljc.chaocommunity.exception.BusinessException;
 import com.ljc.chaocommunity.mapper.CommentLikeMapper;
@@ -14,8 +15,11 @@ import com.ljc.chaocommunity.pojo.entity.PostLike;
 import com.ljc.chaocommunity.service.LikeService;
 import com.ljc.chaocommunity.util.SecurityUtils;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+
+import java.util.concurrent.TimeUnit;
 
 @Service
 public class LikeServiceImpl implements LikeService {
@@ -35,6 +39,9 @@ public class LikeServiceImpl implements LikeService {
     @Autowired
     private PostSearchService postSearchService;
 
+    @Autowired
+    private RedisTemplate<String, Object> redisTemplate;
+
     // ==================== 帖子点赞 ====================
 
     @Override
@@ -50,6 +57,8 @@ public class LikeServiceImpl implements LikeService {
         LambdaQueryWrapper<PostLike> wrapper = new LambdaQueryWrapper<>();
         wrapper.eq(PostLike::getUserId, currentUserId)
                 .eq(PostLike::getPostId, postId);
+
+        //判断有没有点过赞
         if (postLikeMapper.selectCount(wrapper) > 0) {
             return;
         }
@@ -59,13 +68,16 @@ public class LikeServiceImpl implements LikeService {
         postLike.setPostId(postId);
         postLikeMapper.insert(postLike);
 
-        int newCount = post.getLikeCount() + 1;
-        Post updatePost = new Post();
-        updatePost.setId(postId);
-        updatePost.setLikeCount(newCount);
-        postMapper.updateById(updatePost);
-        // ES 同步
-        postSearchService.updateLikeCount(postId, newCount);
+        // DB 原子自增（like_count = like_count + 1），避免并发覆盖丢失
+        LambdaUpdateWrapper<Post> uw = new LambdaUpdateWrapper<>();
+        uw.eq(Post::getId, postId)
+                .setSql("like_count = like_count + 1");
+        postMapper.update(null, uw);
+        // ES 同步（script 原子增减，传增量）
+        postSearchService.updateLikeCount(postId, 1);
+        // Redis 点赞计数 +1（key 不存在时用 DB 值兜底初始化，TTL 30 分钟）
+        redisTemplate.opsForValue().setIfAbsent("post:likeCnt:" + postId, post.getLikeCount(), 30, TimeUnit.MINUTES);
+        redisTemplate.opsForValue().increment("post:likeCnt:" + postId);
     }
 
     @Override
@@ -88,13 +100,16 @@ public class LikeServiceImpl implements LikeService {
 
         postLikeMapper.deleteById(postLike.getId());
 
-        int newCount = Math.max(0, post.getLikeCount() - 1);
-        Post updatePost = new Post();
-        updatePost.setId(postId);
-        updatePost.setLikeCount(newCount);
-        postMapper.updateById(updatePost);
-        // ES 同步
-        postSearchService.updateLikeCount(postId, newCount);
+        // DB 原子自减（GREATEST 保证不为负），避免并发覆盖丢失
+        LambdaUpdateWrapper<Post> uw = new LambdaUpdateWrapper<>();
+        uw.eq(Post::getId, postId)
+                .setSql("like_count = GREATEST(COALESCE(like_count,0) - 1, 0)");
+        postMapper.update(null, uw);
+        // ES 同步（script 原子增减，传增量）
+        postSearchService.updateLikeCount(postId, -1);
+        // Redis 点赞计数 -1（key 不存在时用 DB 值兜底初始化，TTL 30 分钟）
+        redisTemplate.opsForValue().setIfAbsent("post:likeCnt:" + postId, post.getLikeCount(), 30, TimeUnit.MINUTES);
+        redisTemplate.opsForValue().decrement("post:likeCnt:" + postId);
     }
 
     @Override
@@ -131,10 +146,11 @@ public class LikeServiceImpl implements LikeService {
         commentLike.setCommentId(commentId);
         commentLikeMapper.insert(commentLike);
 
-        Comment updateComment = new Comment();
-        updateComment.setId(commentId);
-        updateComment.setLikeCount(comment.getLikeCount() + 1);
-        commentMapper.updateById(updateComment);
+        // DB 原子自增（like_count = like_count + 1），避免并发覆盖丢失
+        LambdaUpdateWrapper<Comment> uw = new LambdaUpdateWrapper<>();
+        uw.eq(Comment::getId, commentId)
+                .setSql("like_count = like_count + 1");
+        commentMapper.update(null, uw);
     }
 
     @Override
@@ -157,10 +173,11 @@ public class LikeServiceImpl implements LikeService {
 
         commentLikeMapper.deleteById(commentLike.getId());
 
-        Comment updateComment = new Comment();
-        updateComment.setId(commentId);
-        updateComment.setLikeCount(Math.max(0, comment.getLikeCount() - 1));
-        commentMapper.updateById(updateComment);
+        // DB 原子自减（GREATEST 保证不为负），避免并发覆盖丢失
+        LambdaUpdateWrapper<Comment> uw = new LambdaUpdateWrapper<>();
+        uw.eq(Comment::getId, commentId)
+                .setSql("like_count = GREATEST(COALESCE(like_count,0) - 1, 0)");
+        commentMapper.update(null, uw);
     }
 
     @Override

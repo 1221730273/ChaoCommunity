@@ -48,6 +48,23 @@ public class PostAuditServiceImpl implements PostAuditService {
     @Autowired
     private PostSearchService postSearchService;
 
+    @Autowired
+    private org.springframework.data.redis.core.RedisTemplate<String, Object> redisTemplate;
+
+    /** 帖子详情缓存 key 前缀（与 PostServiceImpl 保持一致） */
+    private static final String POST_DETAIL_CACHE_KEY = "post:detail:";
+
+    /**
+     * 删除/更新帖子时清理 Redis：详情缓存 + 点赞/浏览/评论三个计数 key
+     * （与 PostServiceImpl.evictPostCache 保持一致）
+     */
+    private void evictPostCache(Long postId) {
+        redisTemplate.delete(POST_DETAIL_CACHE_KEY + postId);
+        redisTemplate.delete("post:likeCnt:" + postId);
+        redisTemplate.delete("post:viewCnt:" + postId);
+        redisTemplate.delete("post:commentCnt:" + postId);
+    }
+
     // ==================== 管理端：审核列表 ====================
 
     @Override
@@ -263,6 +280,8 @@ public class PostAuditServiceImpl implements PostAuditService {
         postMapper.updateById(post);
         // ES 同步
         postSearchService.index(post);
+        // 封面变更：清理 Redis（详情缓存 + 计数 key）
+        evictPostCache(post.getId());
     }
 
     // ==================== 根据用户ID查询审核 ====================
@@ -531,6 +550,8 @@ public class PostAuditServiceImpl implements PostAuditService {
         postMapper.updateById(post);
         // ES 同步
         postSearchService.index(post);
+        // 内容更新：清理 Redis（详情缓存 + 计数 key）
+        evictPostCache(post.getId());
 
         // ===== 6. 更新标签 =====
         if (audit.getTagIds() != null) {

@@ -1,16 +1,20 @@
-package com.ljc.chaocommunity.pojo.vo;
+package com.ljc.chaocommunity.pojo.redis;
 
 import io.swagger.v3.oas.annotations.media.Schema;
+import lombok.AllArgsConstructor;
+import lombok.Builder;
 import lombok.Data;
+import lombok.NoArgsConstructor;
 
+import java.io.Serializable;
 import java.time.LocalDateTime;
 
-/**
- * 用户资料视图
- */
 @Data
-@Schema(description = "用户资料视图")
-public class UserVO {
+@Builder
+@NoArgsConstructor
+@AllArgsConstructor
+@Schema(description = "用户缓存（Redis），剔除关注数、粉丝数，二者实时维护")
+public class UserCache implements Serializable {
 
     @Schema(description = "用户ID")
     private Long id;
@@ -27,18 +31,13 @@ public class UserVO {
     @Schema(description = "个性签名")
     private String signature;
 
-    @Schema(description = "关注数")
-    private Integer followCount;
-
-    @Schema(description = "粉丝数")
-    private Integer followerCount;
-
     @Schema(description = "角色 0=普通用户 1=管理员")
     private Integer role;
 
-    @Schema(description = "状态 0=正常 1=禁言")
+    @Schema(description = "状态 0=正常 1=封禁")
     private Integer status;
 
     @Schema(description = "注册时间")
     private LocalDateTime createTime;
+
 }

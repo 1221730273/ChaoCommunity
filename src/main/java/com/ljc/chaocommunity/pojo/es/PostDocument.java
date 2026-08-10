@@ -1,4 +1,4 @@
-package com.ljc.chaocommunity.es;
+package com.ljc.chaocommunity.pojo.es;
 
 import lombok.AllArgsConstructor;
 import lombok.Builder;

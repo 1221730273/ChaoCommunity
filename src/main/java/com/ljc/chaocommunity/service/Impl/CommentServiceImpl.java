@@ -1,6 +1,7 @@
 package com.ljc.chaocommunity.service.Impl;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.ljc.chaocommunity.service.PostSearchService;
 import com.ljc.chaocommunity.exception.BusinessException;
@@ -16,8 +17,11 @@ import com.ljc.chaocommunity.pojo.vo.CommentVO;
 import com.ljc.chaocommunity.service.CommentService;
 import com.ljc.chaocommunity.util.SecurityUtils;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+
+import java.util.concurrent.TimeUnit;
 
 import java.util.List;
 
@@ -32,6 +36,9 @@ public class CommentServiceImpl implements CommentService {
 
     @Autowired
     private PostSearchService postSearchService;
+
+    @Autowired
+    private RedisTemplate<String, Object> redisTemplate;
 
     @Override
     public PageResult<CommentVO> pageQueryByPostId(CommentPageQueryDTO dto) {
@@ -76,14 +83,16 @@ public class CommentServiceImpl implements CommentService {
         comment.setParentId(dto.getParentId() != null ? dto.getParentId() : 0L);
         commentMapper.insert(comment);
 
-        // 4. 更新帖子的评论数
-        int newCount = post.getCommentCount() + 1;
-        Post updatePost = new Post();
-        updatePost.setId(dto.getPostId());
-        updatePost.setCommentCount(newCount);
-        postMapper.updateById(updatePost);
-        // ES 同步
-        postSearchService.updateCommentCount(dto.getPostId(), newCount);
+        // 4. 更新帖子的评论数（DB 原子自增，避免并发覆盖丢失）
+        LambdaUpdateWrapper<Post> uw = new LambdaUpdateWrapper<>();
+        uw.eq(Post::getId, dto.getPostId())
+                .setSql("comment_count = comment_count + 1");
+        postMapper.update(null, uw);
+        // ES 同步（script 原子增减，传增量）
+        postSearchService.updateCommentCount(dto.getPostId(), 1);
+        // Redis 评论计数 +1（key 不存在时用 DB 值兜底初始化，TTL 30 分钟）
+        redisTemplate.opsForValue().setIfAbsent("post:commentCnt:" + dto.getPostId(), post.getCommentCount(), 30, TimeUnit.MINUTES);
+        redisTemplate.opsForValue().increment("post:commentCnt:" + dto.getPostId());
 
         return comment.getId();
     }
@@ -120,16 +129,18 @@ public class CommentServiceImpl implements CommentService {
         // 3. 软删除评论
         commentMapper.deleteById(commentId);
 
-        // 4. 更新帖子评论数 -1
+        // 4. 更新帖子评论数 -1（DB 原子自减，GREATEST 保证不为负）
         Post post = postMapper.selectById(comment.getPostId());
         if (post != null && post.getCommentCount() > 0) {
-            int newCount = post.getCommentCount() - 1;
-            Post updatePost = new Post();
-            updatePost.setId(post.getId());
-            updatePost.setCommentCount(newCount);
-            postMapper.updateById(updatePost);
-            // ES 同步
-            postSearchService.updateCommentCount(post.getId(), newCount);
+            LambdaUpdateWrapper<Post> uw = new LambdaUpdateWrapper<>();
+            uw.eq(Post::getId, post.getId())
+                    .setSql("comment_count = GREATEST(COALESCE(comment_count,0) - 1, 0)");
+            postMapper.update(null, uw);
+            // ES 同步（script 原子增减，传增量）
+            postSearchService.updateCommentCount(post.getId(), -1);
+            // Redis 评论计数 -1（key 不存在时用 DB 值兜底初始化，TTL 30 分钟）
+            redisTemplate.opsForValue().setIfAbsent("post:commentCnt:" + post.getId(), post.getCommentCount(), 30, TimeUnit.MINUTES);
+            redisTemplate.opsForValue().decrement("post:commentCnt:" + post.getId());
         }
     }
 
@@ -149,16 +160,18 @@ public class CommentServiceImpl implements CommentService {
         }
         commentMapper.deleteById(commentId);
 
-        // 更新帖子评论数 -1
+        // 更新帖子评论数 -1（DB 原子自减，GREATEST 保证不为负）
         Post post = postMapper.selectById(comment.getPostId());
         if (post != null && post.getCommentCount() > 0) {
-            int newCount = post.getCommentCount() - 1;
-            Post updatePost = new Post();
-            updatePost.setId(post.getId());
-            updatePost.setCommentCount(newCount);
-            postMapper.updateById(updatePost);
-            // ES 同步
-            postSearchService.updateCommentCount(post.getId(), newCount);
+            LambdaUpdateWrapper<Post> uw = new LambdaUpdateWrapper<>();
+            uw.eq(Post::getId, post.getId())
+                    .setSql("comment_count = GREATEST(COALESCE(comment_count,0) - 1, 0)");
+            postMapper.update(null, uw);
+            // ES 同步（script 原子增减，传增量）
+            postSearchService.updateCommentCount(post.getId(), -1);
+            // Redis 评论计数 -1（key 不存在时用 DB 值兜底初始化，TTL 30 分钟）
+            redisTemplate.opsForValue().setIfAbsent("post:commentCnt:" + post.getId(), post.getCommentCount(), 30, TimeUnit.MINUTES);
+            redisTemplate.opsForValue().decrement("post:commentCnt:" + post.getId());
         }
     }
 

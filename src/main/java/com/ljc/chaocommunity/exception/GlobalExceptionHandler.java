@@ -2,6 +2,7 @@ package com.ljc.chaocommunity.exception;
 
 import com.ljc.chaocommunity.pojo.result.Result;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.security.core.AuthenticationException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
@@ -27,6 +28,15 @@ public class GlobalExceptionHandler {
     public Result<?> handleMaxUploadSize(MaxUploadSizeExceededException e) {
         log.warn("上传文件过大: {}", e.getMessage());
         return Result.error("上传文件过大，单个文件最大 1MB");
+    }
+
+    /**
+     * 登录认证失败（用户名或密码错误 → BadCredentialsException 等）
+     */
+    @ExceptionHandler(AuthenticationException.class)
+    public Result<?> handleAuthentication(AuthenticationException e) {
+        log.warn("登录认证失败: {}", e.getMessage());
+        return Result.error("用户名或密码错误");
     }
 
     /**

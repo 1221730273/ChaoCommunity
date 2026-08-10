@@ -1,6 +1,7 @@
 package com.ljc.chaocommunity.service.Impl;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.ljc.chaocommunity.exception.BusinessException;
 import com.ljc.chaocommunity.mapper.*;
@@ -8,6 +9,7 @@ import com.ljc.chaocommunity.pojo.dto.CoverUpdateDTO;
 import com.ljc.chaocommunity.pojo.dto.PostDTO;
 import com.ljc.chaocommunity.pojo.dto.PostPageQueryDTO;
 import com.ljc.chaocommunity.pojo.entity.*;
+import com.ljc.chaocommunity.pojo.redis.PostCache;
 import com.ljc.chaocommunity.pojo.result.PageResult;
 import com.ljc.chaocommunity.pojo.vo.PostAuditVO;
 import com.ljc.chaocommunity.pojo.vo.PostVO;
@@ -15,12 +17,15 @@ import com.ljc.chaocommunity.pojo.vo.TagVO;
 import com.ljc.chaocommunity.service.PostSearchService;
 import com.ljc.chaocommunity.service.PostService;
 import com.ljc.chaocommunity.util.SecurityUtils;
+import org.springframework.beans.BeanUtils;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
 
 @Service
@@ -58,6 +63,18 @@ public class PostServiceImpl implements PostService {
 
     @Autowired
     private PostSearchService postSearchService;
+
+    @Autowired
+    private RedisTemplate<String, Object> redisTemplate;
+
+    /** 帖子详情缓存 key 前缀 */
+    private static final String POST_DETAIL_CACHE_KEY = "post:detail:";
+    /** 详情缓存 TTL：30 分钟 */
+    private static final long POST_DETAIL_CACHE_TTL = 30;
+    /** 防穿透空缓存 TTL：30 秒 */
+    private static final long POST_EMPTY_CACHE_TTL = 30;
+    /** 计数缓存 TTL：30 分钟 */
+    private static final long POST_COUNT_CACHE_TTL = 30;
 
 
     /**
@@ -173,6 +190,8 @@ public class PostServiceImpl implements PostService {
         postMapper.deleteById(postId);
         // ES 同步：删除
         postSearchService.delete(postId);
+        // 删除 Redis：详情缓存 + 点赞/浏览/评论计数
+        evictPostCache(postId);
     }
 
 
@@ -326,24 +345,48 @@ public class PostServiceImpl implements PostService {
 
 
     /**
-     * 获取帖子详情
+     * 获取帖子详情（带 Redis 缓存）
+     * 1. 先查 Redis `post:detail:{id}`，命中直接返回
+     * 2. 未命中则查数据库，查到后写入缓存（30 分钟）
+     * 3. 帖子不存在时缓存空对象（30 秒），防止缓存穿透
      */
     @Override
     public PostVO getPostVOById(Long postId) {
+        String key = POST_DETAIL_CACHE_KEY + postId;
 
+        // 1. 先查 Redis 缓存
+        Object cached = redisTemplate.opsForValue().get(key);
+        if (cached instanceof PostCache) {
+            PostCache cache = (PostCache) cached;
+            // 空对象缓存：帖子不存在（防穿透）
+            if (cache.getId() == null) {
+                throw new BusinessException("帖子不存在");
+            }
+            PostVO vo = new PostVO();
+            BeanUtils.copyProperties(cache, vo);
+            // 可见性校验
+            checkPostVisibility(vo);
+            // 浏览量、点赞数、评论数不缓存，优先从 Redis 计数 key 读，无值则用 DB 兜底
+            Post post = postMapper.selectById(postId);
+            int dbView = post != null ? post.getViewCount() : 0;
+            int dbLike = post != null ? post.getLikeCount() : 0;
+            int dbComment = post != null ? post.getCommentCount() : 0;
+            vo.setViewCount(readCount("post:viewCnt:", postId, dbView));
+            vo.setLikeCount(readCount("post:likeCnt:", postId, dbLike));
+            vo.setCommentCount(readCount("post:commentCnt:", postId, dbComment));
+            return vo;
+        }
+
+        // 2. 缓存未命中，查数据库
         PostVO vo = postMapper.getPostVOById(postId);
-
         if (vo == null) {
+            // 3. 帖子不存在：缓存空对象 30 秒，防止缓存穿透
+            redisTemplate.opsForValue().set(key, new PostCache(), POST_EMPTY_CACHE_TTL, TimeUnit.SECONDS);
             throw new BusinessException("帖子不存在");
         }
 
         // 非公开帖子只有作者和管理员可见
-        if (vo.getStatus() != 0) {
-            Long currentUserId = SecurityUtils.getCurrentUserIdOrNull();
-            if (currentUserId == null || (!vo.getUserId().equals(currentUserId) && !SecurityUtils.isAdmin())) {
-                throw new BusinessException("帖子不可见");
-            }
-        }
+        checkPostVisibility(vo);
 
         // 查询标签
         LambdaQueryWrapper<PostTag> wrapper = new LambdaQueryWrapper<>();
@@ -375,6 +418,16 @@ public class PostServiceImpl implements PostService {
                 .map(PostFile::getFileId)
                 .collect(Collectors.toList());
         vo.setContentFileIds(contentFileIds);
+
+        // 4. 写入缓存（剔除浏览量、点赞数、评论数），30 分钟过期
+        PostCache cache = new PostCache();
+        BeanUtils.copyProperties(vo, cache);
+        redisTemplate.opsForValue().set(key, cache, POST_DETAIL_CACHE_TTL, TimeUnit.MINUTES);
+
+        // 5. 同步初始化三个计数 key（仅当 key 不存在时写入 DB 值，避免覆盖实时增量）
+        initCountIfAbsent("post:viewCnt:", postId, vo.getViewCount());
+        initCountIfAbsent("post:likeCnt:", postId, vo.getLikeCount());
+        initCountIfAbsent("post:commentCnt:", postId, vo.getCommentCount());
 
         return vo;
     }
@@ -465,6 +518,8 @@ public class PostServiceImpl implements PostService {
         postMapper.updateById(post);
         // ES 同步
         postSearchService.index(post);
+        // 失效详情缓存
+        evictPostDetailCache(postId);
     }
 
     @Override
@@ -514,13 +569,16 @@ public class PostServiceImpl implements PostService {
     public void incrementViewCount(Long postId) {
         Post post = postMapper.selectById(postId);
         if (post != null) {
-            int newCount = post.getViewCount() + 1;
-            Post updatePost = new Post();
-            updatePost.setId(postId);
-            updatePost.setViewCount(newCount);
-            postMapper.updateById(updatePost);
-            // ES 同步
-            postSearchService.updateViewCount(postId, newCount);
+            // DB 原子自增（view_count = view_count + 1），避免并发覆盖丢失
+            LambdaUpdateWrapper<Post> uw = new LambdaUpdateWrapper<>();
+            uw.eq(Post::getId, postId)
+                    .setSql("view_count = view_count + 1");
+            postMapper.update(null, uw);
+            // ES 同步（script 原子增减，传增量）
+            postSearchService.updateViewCount(postId, 1);
+            // Redis 浏览量计数 +1（key 不存在时用 DB 值兜底初始化，TTL 30 分钟）
+            initCountIfAbsent("post:viewCnt:", postId, post.getViewCount());
+            redisTemplate.opsForValue().increment("post:viewCnt:" + postId);
         }
     }
 
@@ -547,6 +605,8 @@ public class PostServiceImpl implements PostService {
         postMapper.updateById(post);
         // ES 同步
         postSearchService.updateStatus(postId, newStatus);
+        // 删除 Redis：详情缓存 + 点赞/浏览/评论计数（隐藏/公开都清空，重新公开后从 DB 重新初始化）
+        evictPostCache(postId);
     }
 
     /**
@@ -673,6 +733,8 @@ public class PostServiceImpl implements PostService {
         postMapper.deleteById(postId);
         // ES 同步：删除
         postSearchService.delete(postId);
+        // 删除 Redis：详情缓存 + 点赞/浏览/评论计数
+        evictPostCache(postId);
     }
 
     // ==================== 置顶管理 ====================
@@ -689,6 +751,8 @@ public class PostServiceImpl implements PostService {
         postMapper.updateById(post);
         // ES 同步
         postSearchService.updateTop(postId, newTop);
+        // 失效详情缓存
+        evictPostDetailCache(postId);
     }
 
     // ==================== 管理员隐藏用户帖子 ====================
@@ -696,12 +760,22 @@ public class PostServiceImpl implements PostService {
     @Override
     @Transactional
     public int adminHideUserPosts(Long userId) {
+        // 先查出将被隐藏的帖子 ID（用于失效 Redis 详情缓存）
+        LambdaQueryWrapper<Post> query = new LambdaQueryWrapper<>();
+        query.eq(Post::getUserId, userId)
+             .eq(Post::getStatus, 0);
+        List<Post> affected = postMapper.selectList(query);
+
         com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper<Post> uw =
                 new com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper<>();
         uw.eq(Post::getUserId, userId)
           .eq(Post::getStatus, 0)
           .set(Post::getStatus, 1);
         int rows = postMapper.update(null, uw);
+        // 删除 Redis：详情缓存 + 点赞/浏览/评论计数
+        for (Post post : affected) {
+            evictPostCache(post.getId());
+        }
         // ES 同步
         postSearchService.batchHideByUserId(userId);
         return rows;
@@ -736,6 +810,58 @@ public class PostServiceImpl implements PostService {
 
 
     // ==================== 私有辅助方法 ====================
+
+    /**
+     * 帖子可见性校验：非公开帖子（隐藏/封禁）只有作者和管理员可见
+     */
+    private void checkPostVisibility(PostVO vo) {
+        if (vo.getStatus() != 0) {
+            Long currentUserId = SecurityUtils.getCurrentUserIdOrNull();
+            if (currentUserId == null || (!vo.getUserId().equals(currentUserId) && !SecurityUtils.isAdmin())) {
+                throw new BusinessException("帖子不可见");
+            }
+        }
+    }
+
+    /**
+     * 删除帖子详情缓存（帖子变更时调用，避免脏读）
+     */
+    private void evictPostDetailCache(Long postId) {
+        redisTemplate.delete(POST_DETAIL_CACHE_KEY + postId);
+    }
+
+    /**
+     * 删除/隐藏帖子时清理 Redis：详情缓存 + 点赞/浏览/评论三个计数 key
+     * （隐藏也清空计数，重新公开后从 DB 重新初始化）
+     */
+    private void evictPostCache(Long postId) {
+        evictPostDetailCache(postId);
+        redisTemplate.delete("post:likeCnt:" + postId);
+        redisTemplate.delete("post:viewCnt:" + postId);
+        redisTemplate.delete("post:commentCnt:" + postId);
+    }
+
+    /**
+     * 计数 key 不存在时用 DB 值兜底初始化（setIfAbsent，避免覆盖已有实时增量），TTL 30 分钟
+     */
+    private void initCountIfAbsent(String prefix, Long postId, Integer dbValue) {
+        if (dbValue != null) {
+            redisTemplate.opsForValue().setIfAbsent(prefix + postId, dbValue, POST_COUNT_CACHE_TTL, TimeUnit.MINUTES);
+        }
+    }
+
+    /**
+     * 从 Redis 计数 key 读取；key 不存在时回退 DB 值并初始化
+     */
+    private int readCount(String prefix, Long postId, int dbFallback) {
+        Object val = redisTemplate.opsForValue().get(prefix + postId);
+        if (val instanceof Number) {
+            return ((Number) val).intValue();
+        }
+        // key 不存在：用 DB 兜底值初始化并返回
+        initCountIfAbsent(prefix, postId, dbFallback);
+        return dbFallback;
+    }
 
     /**
      * 检查同帖子是否已有待审核记录

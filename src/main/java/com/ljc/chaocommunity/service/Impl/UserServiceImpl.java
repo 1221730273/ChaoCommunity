@@ -12,6 +12,7 @@ import com.ljc.chaocommunity.pojo.dto.UserProfileDTO;
 import com.ljc.chaocommunity.pojo.entity.FileRecord;
 import com.ljc.chaocommunity.pojo.entity.User;
 import com.ljc.chaocommunity.pojo.entity.UserApply;
+import com.ljc.chaocommunity.pojo.redis.UserCache;
 import com.ljc.chaocommunity.pojo.result.PageResult;
 import com.ljc.chaocommunity.pojo.vo.UserApplyVO;
 import com.ljc.chaocommunity.pojo.vo.UserVO;
@@ -19,6 +20,7 @@ import com.ljc.chaocommunity.service.UserSearchService;
 import com.ljc.chaocommunity.service.UserService;
 import com.ljc.chaocommunity.util.OssUtil;
 import com.ljc.chaocommunity.util.SecurityUtils;
+import org.springframework.beans.BeanUtils;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.stereotype.Service;
@@ -27,6 +29,7 @@ import org.springframework.transaction.annotation.Transactional;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
+import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
 
 @Service
@@ -49,6 +52,19 @@ public class UserServiceImpl implements UserService {
 
     @Autowired
     private UserSearchService userSearchService;
+
+    /** 用户详情缓存 key 前缀 */
+    private static final String USER_DETAIL_CACHE_KEY = "user:detail:";
+    /** 关注数计数 key 前缀 */
+    private static final String USER_FOLLOW_COUNT_KEY = "user:followCnt:";
+    /** 粉丝数计数 key 前缀 */
+    private static final String USER_FOLLOWER_COUNT_KEY = "user:followerCnt:";
+    /** 详情缓存 TTL：30 分钟 */
+    private static final long USER_DETAIL_CACHE_TTL = 30;
+    /** 防穿透空缓存 TTL：30 秒 */
+    private static final long USER_EMPTY_CACHE_TTL = 30;
+    /** 计数缓存 TTL：30 分钟 */
+    private static final long USER_COUNT_CACHE_TTL = 30;
 
     // ==================== 用户端：提交修改申请 ====================
 
@@ -113,32 +129,71 @@ public class UserServiceImpl implements UserService {
         userApplyMapper.insert(apply);
     }
 
-    // ==================== 用户资料查询 ====================
+    // ==================== 用户资料查询（带 Redis 缓存） ====================
 
     @Override
     public UserVO getMyProfile() {
         Long currentUserId = SecurityUtils.getCurrentUserId();
-        User user = userMapper.selectById(currentUserId);
-        if (user == null) {
-            throw new BusinessException("用户不存在");
-        }
-        return buildUserVO(user, true);
+        return getProfileWithCache(currentUserId);
     }
 
     @Override
     public UserVO getUserProfile(Long userId) {
-        User user = userMapper.selectById(userId);
-        if (user == null) {
-            throw new BusinessException("用户不存在");
-        }
-        return buildUserVO(user, false);
+        return getProfileWithCache(userId);
     }
 
     /**
-     * User → UserVO
-     * @param includeEmail 是否包含邮箱（仅自己可见）
+     * 获取用户资料（带缓存）：
+     * 1. 先查 Redis `user:detail:{id}`，命中直接返回
+     * 2. 未命中查数据库，写入缓存（30 分钟）
+     * 3. 用户不存在时缓存空对象（30 秒）防穿透
+     * 关注数、粉丝数不缓存，从 Redis 计数 key 实时读（DB 兜底）
      */
-    private UserVO buildUserVO(User user, boolean includeEmail) {
+    private UserVO getProfileWithCache(Long userId) {
+        String key = USER_DETAIL_CACHE_KEY + userId;
+
+        // 1. 先查 Redis 缓存
+        Object cached = redisTemplate.opsForValue().get(key);
+        if (cached instanceof UserCache) {
+            UserCache cache = (UserCache) cached;
+            if (cache.getId() == null) {
+                throw new BusinessException("用户不存在");
+            }
+            UserVO vo = new UserVO();
+            BeanUtils.copyProperties(cache, vo);
+            // 关注数、粉丝数不缓存，从 Redis 计数 key 读，DB 兜底
+            User dbUser = userMapper.selectById(userId);
+            int dbFollow = dbUser != null ? dbUser.getFollowCount() : 0;
+            int dbFollower = dbUser != null ? dbUser.getFollowerCount() : 0;
+            vo.setFollowCount(readCount(USER_FOLLOW_COUNT_KEY, userId, dbFollow));
+            vo.setFollowerCount(readCount(USER_FOLLOWER_COUNT_KEY, userId, dbFollower));
+            return vo;
+        }
+
+        // 2. 缓存未命中，查数据库
+        User user = userMapper.selectById(userId);
+        if (user == null) {
+            // 3. 用户不存在：缓存空对象 30 秒防穿透
+            redisTemplate.opsForValue().set(key, new UserCache(), USER_EMPTY_CACHE_TTL, TimeUnit.SECONDS);
+            throw new BusinessException("用户不存在");
+        }
+
+        // 写入缓存（剔除关注数、粉丝数）
+        UserCache cache = new UserCache();
+        BeanUtils.copyProperties(user, cache);
+        redisTemplate.opsForValue().set(key, cache, USER_DETAIL_CACHE_TTL, TimeUnit.MINUTES);
+
+        // 初始化两个计数 key（仅当 key 不存在时写入 DB 值，避免覆盖实时增量）
+        initCountIfAbsent(USER_FOLLOW_COUNT_KEY, userId, user.getFollowCount());
+        initCountIfAbsent(USER_FOLLOWER_COUNT_KEY, userId, user.getFollowerCount());
+
+        return buildUserVO(user);
+    }
+
+    /**
+     * User → UserVO（不含邮箱，邮箱仅注册输入，不对外返回）
+     */
+    private UserVO buildUserVO(User user) {
         UserVO vo = new UserVO();
         vo.setId(user.getId());
         vo.setUsername(user.getUsername());
@@ -150,12 +205,37 @@ public class UserServiceImpl implements UserService {
         vo.setRole(user.getRole());
         vo.setStatus(user.getStatus());
         vo.setCreateTime(user.getCreateTime());
-
-        if (includeEmail) {
-            vo.setEmail(user.getEmail());
-        }
-
         return vo;
+    }
+
+    /**
+     * 删除用户缓存：详情缓存 + 关注/粉丝两个计数 key（资料/头像变更、封禁时调用）
+     */
+    private void evictUserCache(Long userId) {
+        redisTemplate.delete(USER_DETAIL_CACHE_KEY + userId);
+        redisTemplate.delete(USER_FOLLOW_COUNT_KEY + userId);
+        redisTemplate.delete(USER_FOLLOWER_COUNT_KEY + userId);
+    }
+
+    /**
+     * 计数 key 不存在时用 DB 值兜底初始化（setIfAbsent，避免覆盖已有实时增量），TTL 30 分钟
+     */
+    private void initCountIfAbsent(String prefix, Long userId, Integer dbValue) {
+        if (dbValue != null) {
+            redisTemplate.opsForValue().setIfAbsent(prefix + userId, dbValue, USER_COUNT_CACHE_TTL, TimeUnit.MINUTES);
+        }
+    }
+
+    /**
+     * 从 Redis 计数 key 读取；key 不存在时回退 DB 值并初始化
+     */
+    private int readCount(String prefix, Long userId, int dbFallback) {
+        Object val = redisTemplate.opsForValue().get(prefix + userId);
+        if (val instanceof Number) {
+            return ((Number) val).intValue();
+        }
+        initCountIfAbsent(prefix, userId, dbFallback);
+        return dbFallback;
     }
 
     // ==================== 管理端：用户管理 ====================
@@ -165,7 +245,7 @@ public class UserServiceImpl implements UserService {
         Page<User> p = new Page<>(page, size);
         Page<User> resultPage = userMapper.selectPage(p, new LambdaQueryWrapper<User>().orderByDesc(User::getCreateTime));
         List<UserVO> voList = resultPage.getRecords().stream()
-                .map(u -> buildUserVO(u, true))
+                .map(this::buildUserVO)
                 .collect(Collectors.toList());
         return new PageResult<>(resultPage.getTotal(), voList);
     }
@@ -176,7 +256,7 @@ public class UserServiceImpl implements UserService {
         if (user == null) {
             throw new BusinessException("用户不存在");
         }
-        return buildUserVO(user, true);
+        return buildUserVO(user);
     }
 
     @Override
@@ -189,7 +269,7 @@ public class UserServiceImpl implements UserService {
         List<User> users = userMapper.selectList(wrapper);
         List<UserVO> voList = new ArrayList<>();
         for (User user : users) {
-            voList.add(buildUserVO(user, true));
+            voList.add(buildUserVO(user));
         }
         return voList;
     }
@@ -213,6 +293,8 @@ public class UserServiceImpl implements UserService {
 
         // ES 同步：更新封禁状态
         userSearchService.updateStatus(userId, newStatus);
+        // 清理 Redis：详情缓存 + 计数 key（封禁状态变化，缓存需失效）
+        evictUserCache(userId);
 
         // 封禁时踢掉该用户的登录token
         if (newStatus == 1) {
@@ -335,6 +417,8 @@ public class UserServiceImpl implements UserService {
         userMapper.updateById(user);
         // ES 同步：资料/头像变更
         userSearchService.index(user);
+        // 清理 Redis：详情缓存 + 关注/粉丝计数 key
+        evictUserCache(user.getId());
 
         // 更新申请状态
         apply.setStatus(1);
@@ -378,6 +462,8 @@ public class UserServiceImpl implements UserService {
         user.setNickname(newNickname);
         userMapper.updateById(user);
         userSearchService.index(user);
+        // 清理 Redis 缓存
+        evictUserCache(userId);
         return newNickname;
     }
 
@@ -391,6 +477,8 @@ public class UserServiceImpl implements UserService {
         // ES 同步
         User updated = userMapper.selectById(userId);
         if (updated != null) userSearchService.index(updated);
+        // 清理 Redis 缓存
+        evictUserCache(userId);
     }
 
     @Override
@@ -414,5 +502,7 @@ public class UserServiceImpl implements UserService {
         // ES 同步
         User updated = userMapper.selectById(userId);
         if (updated != null) userSearchService.index(updated);
+        // 清理 Redis 缓存
+        evictUserCache(userId);
     }
 }

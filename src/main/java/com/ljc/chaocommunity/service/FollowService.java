@@ -1,7 +1,6 @@
 package com.ljc.chaocommunity.service;
 
 import com.ljc.chaocommunity.pojo.result.PageResult;
-import com.ljc.chaocommunity.pojo.vo.FollowCountVO;
 import com.ljc.chaocommunity.pojo.vo.FollowVO;
 
 /**
@@ -36,7 +35,4 @@ public interface FollowService {
 
     /** 获取指定用户的粉丝列表 */
     PageResult<FollowVO> getUserFollowers(Long userId, int page, int size);
-
-    /** 获取指定用户的关注数和粉丝数 */
-    FollowCountVO getFollowCount(Long userId);
 }

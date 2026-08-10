@@ -1,6 +1,7 @@
 package com.ljc.chaocommunity.service.Impl;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.ljc.chaocommunity.exception.BusinessException;
 import com.ljc.chaocommunity.mapper.UserFollowMapper;
@@ -8,16 +9,17 @@ import com.ljc.chaocommunity.mapper.UserMapper;
 import com.ljc.chaocommunity.pojo.entity.User;
 import com.ljc.chaocommunity.pojo.entity.UserFollow;
 import com.ljc.chaocommunity.pojo.result.PageResult;
-import com.ljc.chaocommunity.pojo.vo.FollowCountVO;
 import com.ljc.chaocommunity.pojo.vo.FollowVO;
 import com.ljc.chaocommunity.service.FollowService;
 import com.ljc.chaocommunity.util.SecurityUtils;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.concurrent.TimeUnit;
 
 @Service
 public class FollowServiceImpl implements FollowService {
@@ -27,6 +29,16 @@ public class FollowServiceImpl implements FollowService {
 
     @Autowired
     private UserMapper userMapper;
+
+    @Autowired
+    private RedisTemplate<String, Object> redisTemplate;
+
+    /** 关注数计数 key 前缀 */
+    private static final String USER_FOLLOW_COUNT_KEY = "user:followCnt:";
+    /** 粉丝数计数 key 前缀 */
+    private static final String USER_FOLLOWER_COUNT_KEY = "user:followerCnt:";
+    /** 计数缓存 TTL：30 分钟 */
+    private static final long USER_COUNT_CACHE_TTL = 30;
 
     @Override
     @Transactional
@@ -54,12 +66,25 @@ public class FollowServiceImpl implements FollowService {
         uf.setFolloweeId(followeeId);
         userFollowMapper.insert(uf);
 
-        User follower = userMapper.selectById(currentUserId);
-        follower.setFollowCount(follower.getFollowCount() + 1);
-        userMapper.updateById(follower);
+        // DB 原子自增：关注者 follow_count +1
+        LambdaUpdateWrapper<User> myUw = new LambdaUpdateWrapper<>();
+        myUw.eq(User::getId, currentUserId)
+                .setSql("follow_count = follow_count + 1");
+        userMapper.update(null, myUw);
+        // DB 原子自增：被关注者 follower_count +1
+        LambdaUpdateWrapper<User> targetUw = new LambdaUpdateWrapper<>();
+        targetUw.eq(User::getId, followeeId)
+                .setSql("follower_count = follower_count + 1");
+        userMapper.update(null, targetUw);
 
-        followee.setFollowerCount(followee.getFollowerCount() + 1);
-        userMapper.updateById(followee);
+        // Redis 计数 +1（key 不存在时用 DB 值兜底初始化，TTL 30 分钟）
+        User follower = userMapper.selectById(currentUserId);
+        if (follower != null) {
+            redisTemplate.opsForValue().setIfAbsent(USER_FOLLOW_COUNT_KEY + currentUserId, follower.getFollowCount(), USER_COUNT_CACHE_TTL, TimeUnit.MINUTES);
+        }
+        redisTemplate.opsForValue().setIfAbsent(USER_FOLLOWER_COUNT_KEY + followeeId, followee.getFollowerCount(), USER_COUNT_CACHE_TTL, TimeUnit.MINUTES);
+        redisTemplate.opsForValue().increment(USER_FOLLOW_COUNT_KEY + currentUserId);
+        redisTemplate.opsForValue().increment(USER_FOLLOWER_COUNT_KEY + followeeId);
     }
 
     @Override
@@ -84,12 +109,25 @@ public class FollowServiceImpl implements FollowService {
             throw new BusinessException("未关注该用户");
         }
 
-        User follower = userMapper.selectById(currentUserId);
-        follower.setFollowCount(Math.max(0, follower.getFollowCount() - 1));
-        userMapper.updateById(follower);
+        // DB 原子自减（GREATEST 保证不为负）：关注者 follow_count -1
+        LambdaUpdateWrapper<User> myUw = new LambdaUpdateWrapper<>();
+        myUw.eq(User::getId, currentUserId)
+                .setSql("follow_count = GREATEST(COALESCE(follow_count,0) - 1, 0)");
+        userMapper.update(null, myUw);
+        // DB 原子自减：被关注者 follower_count -1
+        LambdaUpdateWrapper<User> targetUw = new LambdaUpdateWrapper<>();
+        targetUw.eq(User::getId, followeeId)
+                .setSql("follower_count = GREATEST(COALESCE(follower_count,0) - 1, 0)");
+        userMapper.update(null, targetUw);
 
-        followee.setFollowerCount(Math.max(0, followee.getFollowerCount() - 1));
-        userMapper.updateById(followee);
+        // Redis 计数 -1（key 不存在时用 DB 值兜底初始化，TTL 30 分钟）
+        User follower = userMapper.selectById(currentUserId);
+        if (follower != null) {
+            redisTemplate.opsForValue().setIfAbsent(USER_FOLLOW_COUNT_KEY + currentUserId, follower.getFollowCount(), USER_COUNT_CACHE_TTL, TimeUnit.MINUTES);
+        }
+        redisTemplate.opsForValue().setIfAbsent(USER_FOLLOWER_COUNT_KEY + followeeId, followee.getFollowerCount(), USER_COUNT_CACHE_TTL, TimeUnit.MINUTES);
+        redisTemplate.opsForValue().decrement(USER_FOLLOW_COUNT_KEY + currentUserId);
+        redisTemplate.opsForValue().decrement(USER_FOLLOWER_COUNT_KEY + followeeId);
     }
 
     @Override
@@ -160,15 +198,6 @@ public class FollowServiceImpl implements FollowService {
             throw new BusinessException("用户不存在");
         }
         return queryFollowerList(userId, page, size);
-    }
-
-    @Override
-    public FollowCountVO getFollowCount(Long userId) {
-        User user = userMapper.selectById(userId);
-        if (user == null) {
-            throw new BusinessException("用户不存在");
-        }
-        return new FollowCountVO(user.getFollowCount(), user.getFollowerCount());
     }
 
     // ==================== 私有方法 ====================
