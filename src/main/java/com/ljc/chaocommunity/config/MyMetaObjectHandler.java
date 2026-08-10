@@ -106,6 +106,8 @@ public class MyMetaObjectHandler implements MetaObjectHandler {
 
 //TODO 新增反馈接口
 
+//TODO 可以像b站一样知道自己的谁点赞了自己的作品 自己的评论
+
 
 
 
