@@ -132,6 +132,19 @@ public class SecurityConfig {
                 )
                 // 关闭 CSRF
                 .csrf(csrf -> csrf.disable())
+                // 未认证/无权限时返回 JSON 格式的友好提示（而非默认 403 空白页）
+                .exceptionHandling(ex -> ex
+                        .authenticationEntryPoint((request, response, authException) -> {
+                            response.setContentType("application/json;charset=UTF-8");
+                            response.setStatus(401);
+                            response.getWriter().write("{\"code\":0,\"msg\":\"请登录\"}");
+                        })
+                        .accessDeniedHandler((request, response, accessDeniedException) -> {
+                            response.setContentType("application/json;charset=UTF-8");
+                            response.setStatus(403);
+                            response.getWriter().write("{\"code\":0,\"msg\":\"请登录\"}");
+                        })
+                )
                 // Token 认证过滤器
                 .addFilterBefore(tokenAuthenticationFilter, UsernamePasswordAuthenticationFilter.class);
 

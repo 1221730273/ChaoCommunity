@@ -2,7 +2,6 @@ package com.ljc.chaocommunity.controller.user;
 
 import com.ljc.chaocommunity.pojo.result.PageResult;
 import com.ljc.chaocommunity.pojo.result.Result;
-import com.ljc.chaocommunity.pojo.vo.FollowCountVO;
 import com.ljc.chaocommunity.pojo.vo.FollowVO;
 import com.ljc.chaocommunity.service.FollowService;
 import io.swagger.v3.oas.annotations.Operation;
@@ -76,11 +75,5 @@ public class FollowController {
                                                           @RequestParam(defaultValue = "1") int page,
                                                           @RequestParam(defaultValue = "20") int size) {
         return Result.success(followService.getUserFollowers(userId, page, size));
-    }
-
-    @GetMapping("/{userId}/count")
-    @Operation(summary = "获取关注数和粉丝数")
-    public Result<FollowCountVO> getFollowCount(@PathVariable Long userId) {
-        return Result.success(followService.getFollowCount(userId));
     }
 }
