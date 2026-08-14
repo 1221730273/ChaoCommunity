@@ -1,6 +1,7 @@
 package com.ljc.chaocommunity.pojo.entity;
 
 import com.baomidou.mybatisplus.annotation.*;
+import com.fasterxml.jackson.annotation.JsonProperty;
 import lombok.Data;
 
 import java.time.LocalDateTime;
@@ -18,7 +19,8 @@ public class User {
     /** 用户名（登录用） */
     private String username;
 
-    /** BCrypt加密后的密码 */
+    /** BCrypt加密后的密码（只接收不输出，避免密码哈希被序列化进 MQ 消息体/响应） */
+    @JsonProperty(access = JsonProperty.Access.WRITE_ONLY)
     private String password;
 
     /** 昵称 */

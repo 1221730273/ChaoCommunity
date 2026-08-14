@@ -2,7 +2,7 @@ package com.ljc.chaocommunity.service.Impl;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
-import com.ljc.chaocommunity.service.PostSearchService;
+import com.ljc.chaocommunity.mq.EsSyncProducer;
 import com.ljc.chaocommunity.exception.BusinessException;
 import com.ljc.chaocommunity.mapper.CommentLikeMapper;
 import com.ljc.chaocommunity.mapper.CommentMapper;
@@ -37,7 +37,7 @@ public class LikeServiceImpl implements LikeService {
     private CommentMapper commentMapper;
 
     @Autowired
-    private PostSearchService postSearchService;
+    private EsSyncProducer esSyncProducer;
 
     @Autowired
     private RedisTemplate<String, Object> redisTemplate;
@@ -73,8 +73,8 @@ public class LikeServiceImpl implements LikeService {
         uw.eq(Post::getId, postId)
                 .setSql("like_count = like_count + 1");
         postMapper.update(null, uw);
-        // ES 同步（script 原子增减，传增量）
-        postSearchService.updateLikeCount(postId, 1);
+        // ES 同步（异步发消息，script 原子增减）
+        esSyncProducer.sendPostUpdateLikeCount(postId, 1);
         // Redis 点赞计数 +1（key 不存在时用 DB 值兜底初始化，TTL 30 分钟）
         redisTemplate.opsForValue().setIfAbsent("post:likeCnt:" + postId, post.getLikeCount(), 30, TimeUnit.MINUTES);
         redisTemplate.opsForValue().increment("post:likeCnt:" + postId);
@@ -105,8 +105,8 @@ public class LikeServiceImpl implements LikeService {
         uw.eq(Post::getId, postId)
                 .setSql("like_count = GREATEST(COALESCE(like_count,0) - 1, 0)");
         postMapper.update(null, uw);
-        // ES 同步（script 原子增减，传增量）
-        postSearchService.updateLikeCount(postId, -1);
+        // ES 同步（异步发消息，script 原子增减）
+        esSyncProducer.sendPostUpdateLikeCount(postId, -1);
         // Redis 点赞计数 -1（key 不存在时用 DB 值兜底初始化，TTL 30 分钟）
         redisTemplate.opsForValue().setIfAbsent("post:likeCnt:" + postId, post.getLikeCount(), 30, TimeUnit.MINUTES);
         redisTemplate.opsForValue().decrement("post:likeCnt:" + postId);

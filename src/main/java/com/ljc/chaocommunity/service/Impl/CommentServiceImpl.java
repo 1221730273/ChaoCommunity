@@ -3,7 +3,7 @@ package com.ljc.chaocommunity.service.Impl;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
-import com.ljc.chaocommunity.service.PostSearchService;
+import com.ljc.chaocommunity.mq.EsSyncProducer;
 import com.ljc.chaocommunity.exception.BusinessException;
 import com.ljc.chaocommunity.mapper.CommentMapper;
 import com.ljc.chaocommunity.mapper.PostMapper;
@@ -35,7 +35,7 @@ public class CommentServiceImpl implements CommentService {
     private PostMapper postMapper;
 
     @Autowired
-    private PostSearchService postSearchService;
+    private EsSyncProducer esSyncProducer;
 
     @Autowired
     private RedisTemplate<String, Object> redisTemplate;
@@ -88,8 +88,8 @@ public class CommentServiceImpl implements CommentService {
         uw.eq(Post::getId, dto.getPostId())
                 .setSql("comment_count = comment_count + 1");
         postMapper.update(null, uw);
-        // ES 同步（script 原子增减，传增量）
-        postSearchService.updateCommentCount(dto.getPostId(), 1);
+        // ES 同步（异步发消息，script 原子增减）
+        esSyncProducer.sendPostUpdateCommentCount(dto.getPostId(), 1);
         // Redis 评论计数 +1（key 不存在时用 DB 值兜底初始化，TTL 30 分钟）
         redisTemplate.opsForValue().setIfAbsent("post:commentCnt:" + dto.getPostId(), post.getCommentCount(), 30, TimeUnit.MINUTES);
         redisTemplate.opsForValue().increment("post:commentCnt:" + dto.getPostId());
@@ -136,8 +136,8 @@ public class CommentServiceImpl implements CommentService {
             uw.eq(Post::getId, post.getId())
                     .setSql("comment_count = GREATEST(COALESCE(comment_count,0) - 1, 0)");
             postMapper.update(null, uw);
-            // ES 同步（script 原子增减，传增量）
-            postSearchService.updateCommentCount(post.getId(), -1);
+            // ES 同步（异步发消息，script 原子增减）
+            esSyncProducer.sendPostUpdateCommentCount(post.getId(), -1);
             // Redis 评论计数 -1（key 不存在时用 DB 值兜底初始化，TTL 30 分钟）
             redisTemplate.opsForValue().setIfAbsent("post:commentCnt:" + post.getId(), post.getCommentCount(), 30, TimeUnit.MINUTES);
             redisTemplate.opsForValue().decrement("post:commentCnt:" + post.getId());
@@ -167,8 +167,8 @@ public class CommentServiceImpl implements CommentService {
             uw.eq(Post::getId, post.getId())
                     .setSql("comment_count = GREATEST(COALESCE(comment_count,0) - 1, 0)");
             postMapper.update(null, uw);
-            // ES 同步（script 原子增减，传增量）
-            postSearchService.updateCommentCount(post.getId(), -1);
+            // ES 同步（异步发消息，script 原子增减）
+            esSyncProducer.sendPostUpdateCommentCount(post.getId(), -1);
             // Redis 评论计数 -1（key 不存在时用 DB 值兜底初始化，TTL 30 分钟）
             redisTemplate.opsForValue().setIfAbsent("post:commentCnt:" + post.getId(), post.getCommentCount(), 30, TimeUnit.MINUTES);
             redisTemplate.opsForValue().decrement("post:commentCnt:" + post.getId());

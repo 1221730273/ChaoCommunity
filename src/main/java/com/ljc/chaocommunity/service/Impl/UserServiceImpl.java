@@ -16,7 +16,7 @@ import com.ljc.chaocommunity.pojo.redis.UserCache;
 import com.ljc.chaocommunity.pojo.result.PageResult;
 import com.ljc.chaocommunity.pojo.vo.UserApplyVO;
 import com.ljc.chaocommunity.pojo.vo.UserVO;
-import com.ljc.chaocommunity.service.UserSearchService;
+import com.ljc.chaocommunity.mq.EsSyncProducer;
 import com.ljc.chaocommunity.service.UserService;
 import com.ljc.chaocommunity.util.OssUtil;
 import com.ljc.chaocommunity.util.SecurityUtils;
@@ -51,7 +51,7 @@ public class UserServiceImpl implements UserService {
     private RedisTemplate<String, Object> redisTemplate;
 
     @Autowired
-    private UserSearchService userSearchService;
+    private EsSyncProducer esSyncProducer;
 
     /** 用户详情缓存 key 前缀 */
     private static final String USER_DETAIL_CACHE_KEY = "user:detail:";
@@ -291,8 +291,8 @@ public class UserServiceImpl implements UserService {
         user.setStatus(newStatus);
         userMapper.updateById(user);
 
-        // ES 同步：更新封禁状态
-        userSearchService.updateStatus(userId, newStatus);
+        // ES 同步：更新封禁状态（异步发消息）
+        esSyncProducer.sendUserUpdateStatus(userId, newStatus);
         // 清理 Redis：详情缓存 + 计数 key（封禁状态变化，缓存需失效）
         evictUserCache(userId);
 
@@ -416,7 +416,7 @@ public class UserServiceImpl implements UserService {
 
         userMapper.updateById(user);
         // ES 同步：资料/头像变更
-        userSearchService.index(user);
+        esSyncProducer.sendUserIndex(user);
         // 清理 Redis：详情缓存 + 关注/粉丝计数 key
         evictUserCache(user.getId());
 
@@ -461,7 +461,7 @@ public class UserServiceImpl implements UserService {
         String newNickname = "user_" + UUID.randomUUID().toString().replace("-", "").substring(0, 10);
         user.setNickname(newNickname);
         userMapper.updateById(user);
-        userSearchService.index(user);
+        esSyncProducer.sendUserIndex(user);
         // 清理 Redis 缓存
         evictUserCache(userId);
         return newNickname;
@@ -476,7 +476,7 @@ public class UserServiceImpl implements UserService {
         userMapper.update(null, uw);
         // ES 同步
         User updated = userMapper.selectById(userId);
-        if (updated != null) userSearchService.index(updated);
+        if (updated != null) esSyncProducer.sendUserIndex(updated);
         // 清理 Redis 缓存
         evictUserCache(userId);
     }
@@ -501,7 +501,7 @@ public class UserServiceImpl implements UserService {
         userMapper.update(null, uw);
         // ES 同步
         User updated = userMapper.selectById(userId);
-        if (updated != null) userSearchService.index(updated);
+        if (updated != null) esSyncProducer.sendUserIndex(updated);
         // 清理 Redis 缓存
         evictUserCache(userId);
     }

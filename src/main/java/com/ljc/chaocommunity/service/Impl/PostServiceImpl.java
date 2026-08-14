@@ -14,7 +14,7 @@ import com.ljc.chaocommunity.pojo.result.PageResult;
 import com.ljc.chaocommunity.pojo.vo.PostAuditVO;
 import com.ljc.chaocommunity.pojo.vo.PostVO;
 import com.ljc.chaocommunity.pojo.vo.TagVO;
-import com.ljc.chaocommunity.service.PostSearchService;
+import com.ljc.chaocommunity.mq.EsSyncProducer;
 import com.ljc.chaocommunity.service.PostService;
 import com.ljc.chaocommunity.util.SecurityUtils;
 import org.springframework.beans.BeanUtils;
@@ -62,7 +62,7 @@ public class PostServiceImpl implements PostService {
     private CommentMapper commentMapper;
 
     @Autowired
-    private PostSearchService postSearchService;
+    private EsSyncProducer esSyncProducer;
 
     @Autowired
     private RedisTemplate<String, Object> redisTemplate;
@@ -188,8 +188,8 @@ public class PostServiceImpl implements PostService {
         commentMapper.delete(commentWrapper);
 
         postMapper.deleteById(postId);
-        // ES 同步：删除
-        postSearchService.delete(postId);
+        // ES 同步：删除（异步发消息）
+        esSyncProducer.sendPostDelete(postId);
         // 删除 Redis：详情缓存 + 点赞/浏览/评论计数
         evictPostCache(postId);
     }
@@ -516,8 +516,8 @@ public class PostServiceImpl implements PostService {
         }
         post.setIsFeatured(post.getIsFeatured() == 1 ? 0 : 1);
         postMapper.updateById(post);
-        // ES 同步
-        postSearchService.index(post);
+        // ES 同步（异步发消息）
+        esSyncProducer.sendPostIndex(post);
         // 失效详情缓存
         evictPostDetailCache(postId);
     }
@@ -574,8 +574,8 @@ public class PostServiceImpl implements PostService {
             uw.eq(Post::getId, postId)
                     .setSql("view_count = view_count + 1");
             postMapper.update(null, uw);
-            // ES 同步（script 原子增减，传增量）
-            postSearchService.updateViewCount(postId, 1);
+            // ES 同步（异步发消息，script 原子增减）
+            esSyncProducer.sendPostUpdateViewCount(postId, 1);
             // Redis 浏览量计数 +1（key 不存在时用 DB 值兜底初始化，TTL 30 分钟）
             initCountIfAbsent("post:viewCnt:", postId, post.getViewCount());
             redisTemplate.opsForValue().increment("post:viewCnt:" + postId);
@@ -603,8 +603,8 @@ public class PostServiceImpl implements PostService {
         int newStatus = post.getStatus() == 0 ? 1 : 0;
         post.setStatus(newStatus);
         postMapper.updateById(post);
-        // ES 同步
-        postSearchService.updateStatus(postId, newStatus);
+        // ES 同步（异步发消息）
+        esSyncProducer.sendPostUpdateStatus(postId, newStatus);
         // 删除 Redis：详情缓存 + 点赞/浏览/评论计数（隐藏/公开都清空，重新公开后从 DB 重新初始化）
         evictPostCache(postId);
     }
@@ -731,8 +731,8 @@ public class PostServiceImpl implements PostService {
         commentMapper.delete(commentWrapper);
 
         postMapper.deleteById(postId);
-        // ES 同步：删除
-        postSearchService.delete(postId);
+        // ES 同步：删除（异步发消息）
+        esSyncProducer.sendPostDelete(postId);
         // 删除 Redis：详情缓存 + 点赞/浏览/评论计数
         evictPostCache(postId);
     }
@@ -749,8 +749,8 @@ public class PostServiceImpl implements PostService {
         int newTop = post.getTop() == 1 ? 0 : 1;
         post.setTop(newTop);
         postMapper.updateById(post);
-        // ES 同步
-        postSearchService.updateTop(postId, newTop);
+        // ES 同步（异步发消息）
+        esSyncProducer.sendPostUpdateTop(postId, newTop);
         // 失效详情缓存
         evictPostDetailCache(postId);
     }
@@ -776,8 +776,8 @@ public class PostServiceImpl implements PostService {
         for (Post post : affected) {
             evictPostCache(post.getId());
         }
-        // ES 同步
-        postSearchService.batchHideByUserId(userId);
+        // ES 同步（异步发消息）
+        esSyncProducer.sendPostBatchHideByUser(userId);
         return rows;
     }
 

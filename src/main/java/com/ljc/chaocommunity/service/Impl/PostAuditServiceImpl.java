@@ -2,7 +2,7 @@ package com.ljc.chaocommunity.service.Impl;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
-import com.ljc.chaocommunity.service.PostSearchService;
+import com.ljc.chaocommunity.mq.EsSyncProducer;
 import com.ljc.chaocommunity.exception.BusinessException;
 import com.ljc.chaocommunity.mapper.*;
 import com.ljc.chaocommunity.pojo.entity.*;
@@ -46,7 +46,7 @@ public class PostAuditServiceImpl implements PostAuditService {
     private OssUtil ossUtil;
 
     @Autowired
-    private PostSearchService postSearchService;
+    private EsSyncProducer esSyncProducer;
 
     @Autowired
     private org.springframework.data.redis.core.RedisTemplate<String, Object> redisTemplate;
@@ -278,8 +278,8 @@ public class PostAuditServiceImpl implements PostAuditService {
         // 5. 更新帖子 coverUrl（不动内容）
         post.setCoverUrl(moveResult.url());
         postMapper.updateById(post);
-        // ES 同步
-        postSearchService.index(post);
+        // ES 同步（异步发消息）
+        esSyncProducer.sendPostIndex(post);
         // 封面变更：清理 Redis（详情缓存 + 计数 key）
         evictPostCache(post.getId());
     }
@@ -341,8 +341,8 @@ public class PostAuditServiceImpl implements PostAuditService {
         post.setCoverUrl(coverUrl);
         post.setStatus(0); // 审核通过，展示
         postMapper.insert(post);
-        // ES 同步
-        postSearchService.index(post);
+        // ES 同步（异步发消息）
+        esSyncProducer.sendPostIndex(post);
 
         // 4. 处理正文图片：temp/ → post/content/，替换 Markdown URL
         String content = post.getContent();
@@ -376,8 +376,8 @@ public class PostAuditServiceImpl implements PostAuditService {
         if (!content.equals(post.getContent())) {
             post.setContent(content);
             postMapper.updateById(post);
-            // ES 同步（内容URL替换后重新覆盖）
-            postSearchService.index(post);
+            // ES 同步（异步发消息，内容URL替换后重新覆盖）
+            esSyncProducer.sendPostIndex(post);
         }
 
         // 5. 封面 post_file
@@ -548,8 +548,8 @@ public class PostAuditServiceImpl implements PostAuditService {
         }
         // 保持原有 status（不改变可见性）
         postMapper.updateById(post);
-        // ES 同步
-        postSearchService.index(post);
+        // ES 同步（异步发消息）
+        esSyncProducer.sendPostIndex(post);
         // 内容更新：清理 Redis（详情缓存 + 计数 key）
         evictPostCache(post.getId());
 
