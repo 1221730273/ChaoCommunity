@@ -13,11 +13,13 @@ import com.ljc.chaocommunity.service.AnnouncementService;
 import com.ljc.chaocommunity.util.SecurityUtils;
 import org.springframework.beans.BeanUtils;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
 
 @Service
@@ -25,6 +27,16 @@ public class AnnouncementServiceImpl implements AnnouncementService {
 
     @Autowired
     private AnnouncementMapper announcementMapper;
+
+    @Autowired
+    private RedisTemplate<String, Object> redisTemplate;
+
+    /** 主页最新公告缓存 key 前缀（按 limit 区分，管理端"清空缓存"用前缀匹配删除） */
+    public static final String HOME_ANNOUNCEMENTS_CACHE_KEY_PREFIX = "home:announcements:";
+    /** 主页缓存 TTL：30 分钟 */
+    private static final long HOME_CACHE_TTL = 30;
+    /** 空缓存 TTL：30 秒（防穿透） */
+    private static final long HOME_EMPTY_CACHE_TTL = 30;
 
     // ==================== 用户端 ====================
 
@@ -76,15 +88,28 @@ public class AnnouncementServiceImpl implements AnnouncementService {
         return vo;
     }
 
+    /**
+     * 查询最新公告（Redis 缓存，Cache-Aside；不随业务失效，管理端手动清空）
+     */
     @Override
+    @SuppressWarnings("unchecked")
     public List<AnnouncementVO> getLatest(int limit) {
+        String key = HOME_ANNOUNCEMENTS_CACHE_KEY_PREFIX + limit;
+
+        // 1. 先查 Redis 缓存
+        Object cached = redisTemplate.opsForValue().get(key);
+        if (cached instanceof List<?>) {
+            return (List<AnnouncementVO>) cached;
+        }
+
+        // 2. 未命中：查库
         LambdaQueryWrapper<Announcement> wrapper = new LambdaQueryWrapper<>();
         wrapper.eq(Announcement::getStatus, 0)
                 .orderByDesc(Announcement::getIsTop)
                 .orderByDesc(Announcement::getCreateTime)
                 .last("LIMIT " + limit);
         List<Announcement> list = announcementMapper.selectList(wrapper);
-        return list.stream().map(a -> {
+        List<AnnouncementVO> voList = list.stream().map(a -> {
             AnnouncementVO vo = new AnnouncementVO();
             vo.setId(a.getId());
             vo.setTitle(a.getTitle());
@@ -94,6 +119,14 @@ public class AnnouncementServiceImpl implements AnnouncementService {
             vo.setCreateTime(a.getCreateTime());
             return vo;
         }).collect(Collectors.toList());
+
+        // 3. 写缓存：空结果也缓存短 TTL 防穿透
+        if (voList.isEmpty()) {
+            redisTemplate.opsForValue().set(key, voList, HOME_EMPTY_CACHE_TTL, TimeUnit.SECONDS);
+        } else {
+            redisTemplate.opsForValue().set(key, voList, HOME_CACHE_TTL, TimeUnit.MINUTES);
+        }
+        return voList;
     }
 
     // ==================== 管理端 ====================

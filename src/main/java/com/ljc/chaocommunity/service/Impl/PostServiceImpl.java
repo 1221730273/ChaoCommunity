@@ -15,6 +15,7 @@ import com.ljc.chaocommunity.pojo.vo.PostAuditVO;
 import com.ljc.chaocommunity.pojo.vo.PostVO;
 import com.ljc.chaocommunity.pojo.vo.TagVO;
 import com.ljc.chaocommunity.mq.EsSyncProducer;
+import com.ljc.chaocommunity.mq.PostCacheProducer;
 import com.ljc.chaocommunity.service.PostService;
 import com.ljc.chaocommunity.util.SecurityUtils;
 import org.springframework.beans.BeanUtils;
@@ -65,6 +66,9 @@ public class PostServiceImpl implements PostService {
     private EsSyncProducer esSyncProducer;
 
     @Autowired
+    private PostCacheProducer postCacheProducer;
+
+    @Autowired
     private RedisTemplate<String, Object> redisTemplate;
 
     /** 帖子详情缓存 key 前缀 */
@@ -75,6 +79,12 @@ public class PostServiceImpl implements PostService {
     private static final long POST_EMPTY_CACHE_TTL = 30;
     /** 计数缓存 TTL：30 分钟 */
     private static final long POST_COUNT_CACHE_TTL = 30;
+    /** 首页精选帖子缓存 key（PostCacheConsumer 失效时也引用此常量） */
+    public static final String HOME_FEATURED_CACHE_KEY = "home:featured:latest";
+    /** 首页精选缓存 TTL：10 分钟 */
+    private static final long HOME_FEATURED_CACHE_TTL = 10;
+    /** 首页精选空缓存 TTL：30 秒（防穿透） */
+    private static final long HOME_FEATURED_EMPTY_TTL = 30;
 
 
     /**
@@ -190,6 +200,8 @@ public class PostServiceImpl implements PostService {
         postMapper.deleteById(postId);
         // ES 同步：删除（异步发消息）
         esSyncProducer.sendPostDelete(postId);
+        // 精选缓存失效（异步发消息，消费者判断是否精选）
+        postCacheProducer.sendPostDeleted(postId, post.getIsFeatured() != null && post.getIsFeatured() == 1);
         // 删除 Redis：详情缓存 + 点赞/浏览/评论计数
         evictPostCache(postId);
     }
@@ -518,6 +530,8 @@ public class PostServiceImpl implements PostService {
         postMapper.updateById(post);
         // ES 同步（异步发消息）
         esSyncProducer.sendPostIndex(post);
+        // 精选缓存失效（异步发消息，精选池变化无论结果都刷新）
+        postCacheProducer.sendFeaturedToggled(postId, post.getIsFeatured() == 1);
         // 失效详情缓存
         evictPostDetailCache(postId);
     }
@@ -552,17 +566,36 @@ public class PostServiceImpl implements PostService {
     }
 
     /**
-     * 首页最新精选帖子：is_featured=1 + status=0，按置顶优先 + 创建时间倒序取 limit 条
+     * 首页最新精选帖子：is_featured=1 + status=0，按创建时间倒序取 limit 条。
+     * Redis 缓存（Cache-Aside）：先查缓存，未命中查库回填；空结果也缓存短 TTL 防穿透。
      */
     @Override
+    @SuppressWarnings("unchecked")
     public List<PostVO> getLatestFeatured(int limit) {
+        // 1. 先查 Redis 缓存（GenericJackson2JsonRedisSerializer 带类型信息，可还原 List<PostVO>）
+        Object cached = redisTemplate.opsForValue().get(HOME_FEATURED_CACHE_KEY);
+        if (cached instanceof List<?>) {
+            return (List<PostVO>) cached;
+        }
+
+        // 2. 未命中：查库（精选 + 展示中，按创建时间倒序取 limit 条）
         LambdaQueryWrapper<Post> wrapper = new LambdaQueryWrapper<>();
         wrapper.eq(Post::getIsFeatured, 1)
                 .eq(Post::getStatus, 0)
                 .orderByDesc(Post::getCreateTime)
                 .last("LIMIT " + limit);
         List<Post> posts = postMapper.selectList(wrapper);
-        return posts.stream().map(post -> postMapper.getPostVOById(post.getId())).collect(Collectors.toList());
+        List<PostVO> voList = posts.stream()
+                .map(post -> postMapper.getPostVOById(post.getId()))
+                .collect(Collectors.toList());
+
+        // 3. 写缓存：有精选用 10 分钟 TTL，空结果用 30 秒 TTL（防穿透）
+        if (voList.isEmpty()) {
+            redisTemplate.opsForValue().set(HOME_FEATURED_CACHE_KEY, voList, HOME_FEATURED_EMPTY_TTL, TimeUnit.SECONDS);
+        } else {
+            redisTemplate.opsForValue().set(HOME_FEATURED_CACHE_KEY, voList, HOME_FEATURED_CACHE_TTL, TimeUnit.MINUTES);
+        }
+        return voList;
     }
 
     @Override
@@ -733,6 +766,8 @@ public class PostServiceImpl implements PostService {
         postMapper.deleteById(postId);
         // ES 同步：删除（异步发消息）
         esSyncProducer.sendPostDelete(postId);
+        // 精选缓存失效（异步发消息，消费者判断是否精选）
+        postCacheProducer.sendPostDeleted(postId, post.getIsFeatured() != null && post.getIsFeatured() == 1);
         // 删除 Redis：详情缓存 + 点赞/浏览/评论计数
         evictPostCache(postId);
     }

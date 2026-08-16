@@ -40,6 +40,10 @@ public class FavoriteServiceImpl implements FavoriteService {
         if (post == null) {
             throw new BusinessException("帖子不存在");
         }
+        // 隐藏帖子仅作者本人可收藏
+        if (post.getStatus() != null && post.getStatus() != 0 && !post.getUserId().equals(currentUserId)) {
+            throw new BusinessException("帖子不可见");
+        }
 
         // 检查是否已收藏（唯一索引兜底，selectCount 给友好提示）
         LambdaQueryWrapper<PostFavorite> wrapper = new LambdaQueryWrapper<>();

@@ -4,6 +4,7 @@ import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.ljc.chaocommunity.mq.EsSyncProducer;
+import com.ljc.chaocommunity.mq.NotifyProducer;
 import com.ljc.chaocommunity.exception.BusinessException;
 import com.ljc.chaocommunity.mapper.CommentMapper;
 import com.ljc.chaocommunity.mapper.PostMapper;
@@ -23,6 +24,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.util.concurrent.TimeUnit;
 
+import java.util.ArrayList;
 import java.util.List;
 
 @Service
@@ -36,6 +38,9 @@ public class CommentServiceImpl implements CommentService {
 
     @Autowired
     private EsSyncProducer esSyncProducer;
+
+    @Autowired
+    private NotifyProducer notifyProducer;
 
     @Autowired
     private RedisTemplate<String, Object> redisTemplate;
@@ -63,21 +68,24 @@ public class CommentServiceImpl implements CommentService {
         if (post == null) {
             throw new BusinessException("帖子不存在");
         }
+        // 隐藏帖子不允许评论
+        if (post.getStatus() != null && post.getStatus() != 0) {
+            throw new BusinessException("帖子已隐藏，无法评论");
+        }
 
-        // 2. 如果是回复评论，校验父评论是否存在
+        // 2. 如果是回复评论，校验父评论是否存在并取出（用于发通知）
+        Comment parentComment = null;
         if (dto.getParentId() != null && dto.getParentId() != 0) {
-            Long count = commentMapper.selectCount(
-                    new LambdaQueryWrapper<Comment>()
-                            .eq(Comment::getId, dto.getParentId())
-            );
-            if (count == 0) {
+            parentComment = commentMapper.selectById(dto.getParentId());
+            if (parentComment == null) {
                 throw new BusinessException("父评论不存在");
             }
         }
 
         // 3. 保存评论
+        Long currentUserId = SecurityUtils.getCurrentUserId();
         Comment comment = new Comment();
-        comment.setUserId(SecurityUtils.getCurrentUserId());
+        comment.setUserId(currentUserId);
         comment.setPostId(dto.getPostId());
         comment.setContent(dto.getContent());
         comment.setParentId(dto.getParentId() != null ? dto.getParentId() : 0L);
@@ -93,6 +101,15 @@ public class CommentServiceImpl implements CommentService {
         // Redis 评论计数 +1（key 不存在时用 DB 值兜底初始化，TTL 30 分钟）
         redisTemplate.opsForValue().setIfAbsent("post:commentCnt:" + dto.getPostId(), post.getCommentCount(), 30, TimeUnit.MINUTES);
         redisTemplate.opsForValue().increment("post:commentCnt:" + dto.getPostId());
+
+        // 5. 通知：回复帖子（一级评论）通知帖子作者，回复评论通知父评论作者（自己回复自己不发）
+        if (parentComment == null) {
+            if (!post.getUserId().equals(currentUserId)) {
+                notifyProducer.sendReplyPost(post.getUserId(), SecurityUtils.getLoginUser().getUser(), post, comment.getId(), dto.getContent());
+            }
+        } else if (!parentComment.getUserId().equals(currentUserId)) {
+            notifyProducer.sendReplyComment(parentComment.getUserId(), SecurityUtils.getLoginUser().getUser(), post, parentComment, comment.getId(), dto.getContent());
+        }
 
         return comment.getId();
     }
@@ -184,29 +201,30 @@ public class CommentServiceImpl implements CommentService {
             throw new BusinessException("评论不存在");
         }
 
-        if (target.getParentId() == 0) {
-            // 目标是一级评论：返回该评论 + 所有子回复
-            List<CommentVO> children = commentMapper.selectVoByParentId(target.getId());
-            return CommentContextVO.builder()
-                    .targetType("ROOT")
-                    .targetId(target.getId())
-                    .rootComment(target)
-                    .children(children)
-                    .build();
-        } else {
-            // 目标是二级回复：返回父评论 + 所有兄弟回复
-            CommentVO parent = commentMapper.selectVoById(target.getParentId());
-            if (parent == null) {
-                throw new BusinessException("父评论不存在");
+        // 2. 沿 parentId 向上收集完整祖先链：根 → ... → 目标（含目标自身）
+        //    无论评论嵌套多深，都返回整条链，保证置顶区能展示完整父级结构
+        List<CommentVO> chain = new ArrayList<>();
+        CommentVO cur = target;
+        while (cur != null) {
+            chain.add(0, cur);
+            Long parentId = cur.getParentId();
+            if (parentId == null || parentId == 0) {
+                break;
             }
-            List<CommentVO> children = commentMapper.selectVoByParentId(parent.getId());
-            return CommentContextVO.builder()
-                    .targetType("CHILD")
-                    .targetId(target.getId())
-                    .rootComment(parent)
-                    .children(children)
-                    .build();
+            cur = commentMapper.selectVoById(parentId);
         }
+
+        // 3. 目标评论的直接子回复（时间升序）
+        List<CommentVO> children = commentMapper.selectVoByParentId(target.getId());
+
+        boolean isRoot = target.getParentId() == null || target.getParentId() == 0;
+        return CommentContextVO.builder()
+                .targetType(isRoot ? "ROOT" : "CHILD")
+                .targetId(target.getId())
+                .rootComment(chain.get(0))
+                .chain(chain)
+                .children(children)
+                .build();
     }
 
 }

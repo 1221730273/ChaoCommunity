@@ -103,9 +103,9 @@ public class MyMetaObjectHandler implements MetaObjectHandler {
 
 //TODO 新增反馈接口
 
-//TODO 可以像b站一样知道自己的谁点赞了自己的作品 自己的评论
-
 //TODO 以后可以设计收藏夹可以设置公开或者私密
+
+//TODO 子评论需要点开详情来查看
 
 
 

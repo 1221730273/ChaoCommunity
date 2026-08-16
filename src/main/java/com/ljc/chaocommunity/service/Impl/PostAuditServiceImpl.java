@@ -3,6 +3,7 @@ package com.ljc.chaocommunity.service.Impl;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.ljc.chaocommunity.mq.EsSyncProducer;
+import com.ljc.chaocommunity.mq.PostCacheProducer;
 import com.ljc.chaocommunity.exception.BusinessException;
 import com.ljc.chaocommunity.mapper.*;
 import com.ljc.chaocommunity.pojo.entity.*;
@@ -47,6 +48,9 @@ public class PostAuditServiceImpl implements PostAuditService {
 
     @Autowired
     private EsSyncProducer esSyncProducer;
+
+    @Autowired
+    private PostCacheProducer postCacheProducer;
 
     @Autowired
     private org.springframework.data.redis.core.RedisTemplate<String, Object> redisTemplate;
@@ -280,6 +284,8 @@ public class PostAuditServiceImpl implements PostAuditService {
         postMapper.updateById(post);
         // ES 同步（异步发消息）
         esSyncProducer.sendPostIndex(post);
+        // 精选缓存失效（审核通过，消费者判断是否精选）
+        postCacheProducer.sendAuditApproved(post.getId(), post.getIsFeatured() != null && post.getIsFeatured() == 1);
         // 封面变更：清理 Redis（详情缓存 + 计数 key）
         evictPostCache(post.getId());
     }
@@ -550,6 +556,8 @@ public class PostAuditServiceImpl implements PostAuditService {
         postMapper.updateById(post);
         // ES 同步（异步发消息）
         esSyncProducer.sendPostIndex(post);
+        // 精选缓存失效（审核通过，消费者判断是否精选）
+        postCacheProducer.sendAuditApproved(post.getId(), post.getIsFeatured() != null && post.getIsFeatured() == 1);
         // 内容更新：清理 Redis（详情缓存 + 计数 key）
         evictPostCache(post.getId());
 

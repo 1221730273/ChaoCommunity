@@ -3,6 +3,7 @@ package com.ljc.chaocommunity.service.Impl;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
 import com.ljc.chaocommunity.mq.EsSyncProducer;
+import com.ljc.chaocommunity.mq.NotifyProducer;
 import com.ljc.chaocommunity.exception.BusinessException;
 import com.ljc.chaocommunity.mapper.CommentLikeMapper;
 import com.ljc.chaocommunity.mapper.CommentMapper;
@@ -40,6 +41,9 @@ public class LikeServiceImpl implements LikeService {
     private EsSyncProducer esSyncProducer;
 
     @Autowired
+    private NotifyProducer notifyProducer;
+
+    @Autowired
     private RedisTemplate<String, Object> redisTemplate;
 
     // ==================== 帖子点赞 ====================
@@ -52,6 +56,10 @@ public class LikeServiceImpl implements LikeService {
         Post post = postMapper.selectById(postId);
         if (post == null) {
             throw new BusinessException("帖子不存在");
+        }
+        // 隐藏帖子不允许点赞
+        if (post.getStatus() != null && post.getStatus() != 0) {
+            throw new BusinessException("帖子已隐藏，无法点赞");
         }
 
         LambdaQueryWrapper<PostLike> wrapper = new LambdaQueryWrapper<>();
@@ -78,6 +86,10 @@ public class LikeServiceImpl implements LikeService {
         // Redis 点赞计数 +1（key 不存在时用 DB 值兜底初始化，TTL 30 分钟）
         redisTemplate.opsForValue().setIfAbsent("post:likeCnt:" + postId, post.getLikeCount(), 30, TimeUnit.MINUTES);
         redisTemplate.opsForValue().increment("post:likeCnt:" + postId);
+        // 通知：有人赞了你的帖子（自己赞自己不发）
+        if (!post.getUserId().equals(currentUserId)) {
+            notifyProducer.sendLikePost(post.getUserId(), SecurityUtils.getLoginUser().getUser(), post);
+        }
     }
 
     @Override
@@ -132,6 +144,11 @@ public class LikeServiceImpl implements LikeService {
         if (comment == null) {
             throw new BusinessException("评论不存在");
         }
+        // 评论所属帖子隐藏时不允许点赞
+        Post post = postMapper.selectById(comment.getPostId());
+        if (post != null && post.getStatus() != null && post.getStatus() != 0) {
+            throw new BusinessException("帖子已隐藏，无法点赞");
+        }
 
         // 判断是否已点赞
         LambdaQueryWrapper<CommentLike> wrapper = new LambdaQueryWrapper<>();
@@ -151,6 +168,10 @@ public class LikeServiceImpl implements LikeService {
         uw.eq(Comment::getId, commentId)
                 .setSql("like_count = like_count + 1");
         commentMapper.update(null, uw);
+        // 通知：有人赞了你的评论（自己赞自己不发）
+        if (!comment.getUserId().equals(currentUserId)) {
+            notifyProducer.sendLikeComment(comment.getUserId(), SecurityUtils.getLoginUser().getUser(), comment);
+        }
     }
 
     @Override

@@ -6,6 +6,7 @@ import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.ljc.chaocommunity.exception.BusinessException;
 import com.ljc.chaocommunity.mapper.UserFollowMapper;
 import com.ljc.chaocommunity.mapper.UserMapper;
+import com.ljc.chaocommunity.mq.NotifyProducer;
 import com.ljc.chaocommunity.pojo.entity.User;
 import com.ljc.chaocommunity.pojo.entity.UserFollow;
 import com.ljc.chaocommunity.pojo.result.PageResult;
@@ -32,6 +33,9 @@ public class FollowServiceImpl implements FollowService {
 
     @Autowired
     private RedisTemplate<String, Object> redisTemplate;
+
+    @Autowired
+    private NotifyProducer notifyProducer;
 
     /** 关注数计数 key 前缀 */
     private static final String USER_FOLLOW_COUNT_KEY = "user:followCnt:";
@@ -85,6 +89,9 @@ public class FollowServiceImpl implements FollowService {
         redisTemplate.opsForValue().setIfAbsent(USER_FOLLOWER_COUNT_KEY + followeeId, followee.getFollowerCount(), USER_COUNT_CACHE_TTL, TimeUnit.MINUTES);
         redisTemplate.opsForValue().increment(USER_FOLLOW_COUNT_KEY + currentUserId);
         redisTemplate.opsForValue().increment(USER_FOLLOWER_COUNT_KEY + followeeId);
+
+        // 通知：有人关注了你（已禁止关注自己，无需再判）
+        notifyProducer.sendFollow(followeeId, SecurityUtils.getLoginUser().getUser());
     }
 
     @Override

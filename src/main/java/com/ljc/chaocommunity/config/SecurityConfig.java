@@ -124,6 +124,9 @@ public class SecurityConfig {
                         // 公告
                         .requestMatchers(HttpMethod.GET, "/announcement/**").permitAll()
 
+                        // WebSocket 握手端点（token 鉴权由 AuthHandshakeInterceptor 承担）
+                        .requestMatchers("/ws").permitAll()
+
                         // ===== 管理后台接口需要管理员角色 =====
                         .requestMatchers("/admin/**").hasRole("ADMIN")
 

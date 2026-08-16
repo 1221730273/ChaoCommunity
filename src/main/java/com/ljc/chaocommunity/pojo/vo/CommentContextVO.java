@@ -22,9 +22,12 @@ public class CommentContextVO {
     /** 目标评论ID */
     private Long targetId;
 
-    /** 父级评论（目标为一级评论时 = 目标评论自身，目标为二级评论时 = 其父评论） */
+    /** 根评论（目标为一级评论时 = 目标评论自身，否则 = 祖先链最顶端的根评论） */
     private CommentVO rootComment;
 
-    /** 该父评论下的所有子回复（按时间升序），目标评论 highlight=true */
+    /** 目标评论的完整祖先链（根 → ... → 目标，含目标自身），按层级从浅到深 */
+    private List<CommentVO> chain;
+
+    /** 目标评论的直接子回复（按时间升序） */
     private List<CommentVO> children;
 }
